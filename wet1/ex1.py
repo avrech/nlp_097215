@@ -130,12 +130,12 @@ class MEMM:
                                                                                              prev_tag, prev_prev_tag),
                                                            norm=norm_for_context[(word_index, prev_tag, prev_prev_tag)])
                          for prev_prev_tag in self.enriched_tags if past_proba[prev_prev_tag] != 0}
-                    pi_temp[(word_index, prev_tag, tag)] = max([past_proba.get(prev_prev_tag, 0) *
-                                                               transition_proba.get(prev_prev_tag, 0)
-                                                               for prev_prev_tag in self.enriched_tags])
-                    bp_temp[(word_index, prev_tag, tag)] = np.argmax(
-                        [past_proba.get(prev_prev_tag, 0) * transition_proba.get(prev_prev_tag, 0) for prev_prev_tag in
-                         self.enriched_tags])
+
+                    pi_candidates = [past_proba.get(prev_prev_tag, 0) * transition_proba.get(prev_prev_tag, 0)
+                                     for prev_prev_tag in self.enriched_tags]
+                    pi_temp[(word_index, prev_tag, tag)] = max(pi_candidates)
+                    bp_temp[(word_index, prev_tag, tag)] = np.argmax(pi_candidates)
+
             # trim entries with low probability (beam search)
             # find the probabilty above which we have at least BEAM_MIN possibilities
             min_proba_for_stage = 1
