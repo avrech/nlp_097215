@@ -4,7 +4,9 @@ import math
 import datetime
 import scipy
 from scipy import optimize
+import pickle
 import time
+
 
 class Context:
     def __init__(self, word, tag, history, prev_tag, prev_prev_tag, next_word):
@@ -48,7 +50,7 @@ class MEMM:
         self.parameter_vector = None
         self.empirical_counts = None
 
-    def train_model(self, sentences):
+    def train_model(self, sentences, param_vec=None):
         # prepare data and get statistics
         print(f'{datetime.datetime.now()} - processing data')
         word_tag_pairs = []
@@ -86,8 +88,9 @@ class MEMM:
 
         # calculate the parameters vector
         print(f'{datetime.datetime.now()} - finding parameter vector')
-        param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
-                                            jac=self.grad_l)
+        if param_vec is None:
+            param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
+                                                jac=self.grad_l)
         # param_vec = scipy.optimize.fmin_l_bfgs_b(self.l, np.zeros(len(self.feature_set)), self.grad_l)
         # optimize.minimize(self.l,np.zeros(len(self.feature_set)),)
         self.parameter_vector = param_vec.x
@@ -101,6 +104,8 @@ class MEMM:
         pi = {(0, None, None): 1}
         bp = {}
         for word_index in range(1, len(parsed_sentence) + 1):
+            pi_temp = {}
+            bp_temp = {}
             for tag in self.tags:
                 for prev_tag in self.enriched_tags:
                     past_proba = {prev_prev_tag: pi.get((word_index - 1, prev_prev_tag, prev_tag), 0) for prev_prev_tag
@@ -110,12 +115,28 @@ class MEMM:
                                                                                              word_index - 1, tag,
                                                                                              prev_tag, prev_prev_tag))
                          for prev_prev_tag in self.enriched_tags if past_proba[prev_prev_tag] != 0}
-                    pi[(word_index, prev_tag, tag)] = max([past_proba.get(prev_prev_tag, 0) *
-                                                           transition_proba.get(prev_prev_tag, 0)
-                                                           for prev_prev_tag in self.enriched_tags])
-                    bp[(word_index, prev_tag, tag)] = np.argmax(
+                    pi_temp[(word_index, prev_tag, tag)] = max([past_proba.get(prev_prev_tag, 0) *
+                                                               transition_proba.get(prev_prev_tag, 0)
+                                                               for prev_prev_tag in self.enriched_tags])
+                    bp_temp[(word_index, prev_tag, tag)] = np.argmax(
                         [past_proba.get(prev_prev_tag, 0) * transition_proba.get(prev_prev_tag, 0) for prev_prev_tag in
                          self.enriched_tags])
+            # trim entries with low probability (beam search)
+            # find the probabilty above which we have at least BEAM_MIN possibilities
+            min_proba_for_stage = 1
+            count_entries_per_proba = len([pi_val for pi_key, pi_val in pi_temp.items()
+                                           if pi_val >= min_proba_for_stage])
+            BEAM_MIN = 10
+            while count_entries_per_proba < BEAM_MIN:
+                min_proba_for_stage = max([pi_val for pi_key, pi_val in pi_temp.items()
+                                           if pi_val < min_proba_for_stage])
+                count_entries_per_proba = len([pi_val for pi_key, pi_val in pi_temp.items()
+                                               if pi_val >= min_proba_for_stage])
+            # merge all the entries above min_proba_for_stage into pi/bp
+            for key, val in [(key, val) for key, val in pi_temp.items() if val >= min_proba_for_stage]:
+                pi[key] = val
+                bp[key] = bp_temp[key]
+
         # use backpointers to find the tags
         sorted_pi = sorted([(k, u, v, pi[(k, u, v)]) for k, u, v in pi],  key=lambda x: x[3], reverse=True)
         index, tn_prev, tn, proba = [x for x in sorted_pi if x[0] == len(parsed_sentence)][0]
@@ -183,8 +204,11 @@ class MEMM:
                 expected_counts += nominator / normalization if normalization > 0 else 0
         return -(self.empirical_counts - expected_counts)
 
+    def test(self, text, annotated=False):
+        pass
 
-# recieves input file (of tagged sentences),
+
+# receives input file (of tagged sentences),
 # returns a list of sentences, each sentence is a list of (word,tag)s
 # also performs base verification of input
 def get_parsed_sentences_from_tagged_file(filename):
@@ -215,7 +239,12 @@ if __name__ == "__main__":
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
     model = MEMM()
     model.train_model(parsed_sentences[:10])
-    sentence1 = ' '.join([word[0] for word in parsed_sentences[0][:10]])
+    with open('model_prm.pkl', 'wb') as f:
+        pickle.dump(model.parameter_vector, f)
+    f = open('model_prm.pkl', 'rb')
+    param_vector = pickle.load(f)
+    # model.test('bla', annotated=True)
+    sentence1 = ' '.join([word[0] for word in parsed_sentences[0]])
     results_tag, inference_time = model.infer(sentence1)
     tagged_sentence1 = [f'{sentence1.split(" ")[i]}_{results_tag[i]}' for i in range(len(results_tag))]
     # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
