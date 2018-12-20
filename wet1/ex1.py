@@ -104,6 +104,7 @@ class MEMM:
         pi = {(0, None, None): 1}
         bp = {}
         for word_index in range(1, len(parsed_sentence) + 1):
+            context_dict = {}
             norm_for_context = {}
             pi_temp = {}
             bp_temp = {}
@@ -112,12 +113,17 @@ class MEMM:
 
                     past_proba = {prev_prev_tag: pi.get((word_index - 1, prev_prev_tag, prev_tag), 0) for prev_prev_tag
                                   in self.enriched_tags}
+                    # save the context and the norm for the context, prev tag, prev prev tag once
+                    # (otherwise we calculate it many times for different tags
                     for prev_prev_tag in self.enriched_tags:
-                        if past_proba[prev_prev_tag] != 0:
-                            if (word_index, prev_tag, prev_prev_tag) not in norm_for_context:
-                                norm_for_context[(word_index, prev_tag, prev_prev_tag)] = \
-                                    self.get_context_norm(Context.get_context_untagged(parsed_sentence, word_index - 1,
-                                                                                       tag, prev_tag, prev_prev_tag))
+                        if past_proba[prev_prev_tag] != 0 and\
+                                        (word_index, prev_tag, prev_prev_tag) not in norm_for_context:
+                            if (prev_tag, prev_prev_tag) not in context_dict:
+                                context_dict[(prev_tag, prev_prev_tag)] = \
+                                    Context.get_context_untagged(parsed_sentence, word_index - 1, tag, prev_tag,
+                                                                 prev_prev_tag)
+                            norm_for_context[(word_index, prev_tag, prev_prev_tag)] = \
+                                self.get_context_norm(context_dict[(prev_tag, prev_prev_tag)])
                     transition_proba = \
                         {prev_prev_tag: self.get_tag_proba(tag, Context.get_context_untagged(parsed_sentence,
                                                                                              word_index - 1, tag,
