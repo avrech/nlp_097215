@@ -49,6 +49,7 @@ class MEMM:
         self.empirical_counts = None
 
     def train_model(self, sentences):
+        training_start_time = time.time()
         # prepare data and get statistics
         print(f'{datetime.datetime.now()} - processing data')
         word_tag_pairs = []
@@ -91,8 +92,10 @@ class MEMM:
         # param_vec = scipy.optimize.fmin_l_bfgs_b(self.l, np.zeros(len(self.feature_set)), self.grad_l)
         # optimize.minimize(self.l,np.zeros(len(self.feature_set)),)
         self.parameter_vector = param_vec.x
+        training_total_time = time.time() - training_start_time
         print(self.parameter_vector)
         print(f'{datetime.datetime.now()} - model train complete')
+        print(f'Training total time - {"{0:.2f}".format(training_total_time)}[sec]')
 
     # use Viterbi to infer tags for the target sentence
     def infer(self, sentence):
@@ -128,22 +131,31 @@ class MEMM:
 
     def get_feature_vector_for_context(self, context):
         vector = [feature(context) for feature in self.feature_set]
-        return vector
+        return np.array(vector)
 
-    def get_dot_product(self, feature_vector):
-        dot_product = sum([feature_vector[i] * self.parameter_vector[i] for i in range(len(feature_vector))])
-        return dot_product
+    # def get_dot_product(self, feature_vector):
+    #     dot_product = sum([feature_vector[i] * self.parameter_vector[i] for i in range(len(feature_vector))])
+    #     return dot_product
 
     # soft max
     def get_tag_proba(self, tag, context):
         context.tag = tag
         tag_vector = self.get_feature_vector_for_context(context)
-        numerator = 2 ** self.get_dot_product(tag_vector)
-        norm = 0
+        numerator_exp = tag_vector @ self.parameter_vector
+        # norm = 0
+        # for curr_tag in self.tags:
+        #     context.tag = curr_tag
+        #     tag_vector = self.get_feature_vector_for_context(context)
+        #     norm += 2 ** self.get_dot_product(tag_vector)
+        tag_vectors = []
         for curr_tag in self.tags:
             context.tag = curr_tag
-            tag_vector = self.get_feature_vector_for_context(context)
-            norm += 2 ** self.get_dot_product(tag_vector)
+            tag_vectors.append(self.get_feature_vector_for_context(context))
+        denumerator_exp = np.array(tag_vectors) @ self.parameter_vector
+        # safe softmax:
+        norm = np.sum(2 ** (denumerator_exp-np.max(denumerator_exp)))
+        numerator = 2 ** (numerator_exp-np.max(denumerator_exp))
+
         proba = numerator / norm if norm > 0 else 0
         return proba
 
@@ -156,15 +168,23 @@ class MEMM:
         for sentence in self.sentences:
             for i in range(len(sentence)):
                 curr_context = Context.get_context_tagged(sentence, i)
-                curr_exp = 0
+                # curr_exp = 0
+                # for tag in self.tags:
+                #     curr_context.tag = tag
+                #     vector = self.get_feature_vector_for_context(curr_context)
+                #     curr_exp += 2 ** np.dot(v, vector)
+                # norm_part += math.log(curr_exp, 2)
+                vectors = []
                 for tag in self.tags:
                     curr_context.tag = tag
-                    vector = self.get_feature_vector_for_context(curr_context)
-                    curr_exp += 2 ** np.dot(v, vector)
-                norm_part += math.log(curr_exp, 2)
+                    vectors.append(self.get_feature_vector_for_context(curr_context))
+                par_curr_exp = np.sum(2 ** np.dot(np.array(vectors), v))
+                # assert curr_exp == par_curr_exp
+                norm_part += math.log(par_curr_exp, 2)
         return -(proba - norm_part)
 
     def grad_l(self, v):
+        # TODO: parallelize dot product, and compute features once before training.
         # expected counts
         expected_counts = 0
         for sentence in self.sentences:
@@ -177,7 +197,7 @@ class MEMM:
                     curr_context.tag = tag
                     vector = self.get_feature_vector_for_context(curr_context)
                     curr_exp += 2 ** np.dot(v, vector)
-                    normalization += curr_exp
+                    normalization += curr_exp # TODO: did you mean cummulative sum?
                     nominator += np.dot(vector, curr_exp)
 
                 expected_counts += nominator / normalization if normalization > 0 else 0
@@ -214,8 +234,8 @@ if __name__ == "__main__":
     # load training set
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
     model = MEMM()
-    model.train_model(parsed_sentences[:10])
-    sentence1 = ' '.join([word[0] for word in parsed_sentences[0][:10]])
+    model.train_model(parsed_sentences[:5])
+    sentence1 = ' '.join([word[0] for word in parsed_sentences[0][:5]])
     results_tag, inference_time = model.infer(sentence1)
     tagged_sentence1 = [f'{sentence1.split(" ")[i]}_{results_tag[i]}' for i in range(len(results_tag))]
     # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
