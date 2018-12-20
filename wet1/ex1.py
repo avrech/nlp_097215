@@ -104,16 +104,25 @@ class MEMM:
         pi = {(0, None, None): 1}
         bp = {}
         for word_index in range(1, len(parsed_sentence) + 1):
+            norm_for_context = {}
             pi_temp = {}
             bp_temp = {}
             for tag in self.tags:
                 for prev_tag in self.enriched_tags:
+
                     past_proba = {prev_prev_tag: pi.get((word_index - 1, prev_prev_tag, prev_tag), 0) for prev_prev_tag
                                   in self.enriched_tags}
+                    for prev_prev_tag in self.enriched_tags:
+                        if past_proba[prev_prev_tag] != 0:
+                            if (word_index, prev_tag, prev_prev_tag) not in norm_for_context:
+                                norm_for_context[(word_index, prev_tag, prev_prev_tag)] = \
+                                    self.get_context_norm(Context.get_context_untagged(parsed_sentence, word_index - 1,
+                                                                                       tag, prev_tag, prev_prev_tag))
                     transition_proba = \
                         {prev_prev_tag: self.get_tag_proba(tag, Context.get_context_untagged(parsed_sentence,
                                                                                              word_index - 1, tag,
-                                                                                             prev_tag, prev_prev_tag))
+                                                                                             prev_tag, prev_prev_tag),
+                                                           norm=norm_for_context[(word_index, prev_tag, prev_prev_tag)])
                          for prev_prev_tag in self.enriched_tags if past_proba[prev_prev_tag] != 0}
                     pi_temp[(word_index, prev_tag, tag)] = max([past_proba.get(prev_prev_tag, 0) *
                                                                transition_proba.get(prev_prev_tag, 0)
@@ -156,17 +165,22 @@ class MEMM:
         return dot_product
 
     # soft max
-    def get_tag_proba(self, tag, context):
+    def get_tag_proba(self, tag, context, norm=None):
         context.tag = tag
         tag_vector = self.get_feature_vector_for_context(context)
         numerator = 2 ** self.get_dot_product(tag_vector)
+        if norm is None:
+            norm = self.get_context_norm(context)
+        proba = numerator / norm if norm > 0 else 0
+        return proba
+
+    def get_context_norm(self, context):
         norm = 0
         for curr_tag in self.tags:
             context.tag = curr_tag
             tag_vector = self.get_feature_vector_for_context(context)
             norm += 2 ** self.get_dot_product(tag_vector)
-        proba = numerator / norm if norm > 0 else 0
-        return proba
+        return norm
 
     # the ML estimate maximization function
     def l(self, v):
@@ -197,7 +211,7 @@ class MEMM:
                 for tag in self.tags:
                     curr_context.tag = tag
                     vector = self.get_feature_vector_for_context(curr_context)
-                    curr_exp += 2 ** np.dot(v, vector)
+                    curr_exp = 2 ** np.dot(v, vector)
                     normalization += curr_exp
                     nominator += np.dot(vector, curr_exp)
 
