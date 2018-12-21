@@ -10,7 +10,7 @@ import time
 # returns a list of sentences, each sentence is a list of (word,tag)s
 # also performs base verification of input
 def get_parsed_sentences_from_tagged_file(filename):
-    print(f'{datetime.datetime.now()} - loading data from file {filename}')
+    print(datetime.datetime.now(),' - loading data from file {filename}')
     f_text = open(filename)
     all_words_and_tags = []
     sentences = []
@@ -21,14 +21,14 @@ def get_parsed_sentences_from_tagged_file(filename):
         all_words_and_tags += words_and_tags
     bad_words = [word for word in all_words_and_tags if len(word) != 2]
     if bad_words:
-        print(f'found {len(bad_words)} bad words - {bad_words}')
+        print('found ',len(bad_words),' bad words - ', bad_words)
     all_tags_list = [word[1] for word in all_words_and_tags]
     all_tags_set = set(all_tags_list)
     # tags_counter = Counter(all_tags_list)
     # all_words_list = [word[0] for word in all_words_and_tags]
     # words_counter = Counter(all_words_list)
     # all_words_set = set(all_words_list)
-    print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
+    print(datetime.datetime.now(),' - found ',len(all_tags_set),' tags - ',all_tags_set)
     return sentences
 
 def pre_process_data(train_set):
@@ -49,21 +49,21 @@ def pre_process_data(train_set):
     # Define thresholds:
     pref_th = {1: 1000, 2: 1000, 3: 500, 4: 500}
     selected_prefix = {1: [], 2: [], 3: [], 4: []}
-    print('prefix counts:')
+    # print('prefix counts:')
     for l in np.arange(1, 5):
         for p in prefix[l].keys():
             if prefix[l][p] > pref_th[l]:
                 selected_prefix[l].append(p)
-                print(p, ': ', prefix[l][p])
+                # print(p, ': ', prefix[l][p])
 
     suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
     selected_suffix = {1: [], 2: [], 3: [], 4: []}
-    print('suffix counts:')
+    # print('suffix counts:')
     for l in np.arange(1, 5):
         for p in suffix[l].keys():
             if suffix[l][p] > suff_th[l]:
                 selected_suffix[l].append(p)
-                print(p, ': ', suffix[l][p])
+                # print(p, ': ', suffix[l][p])
 
     print('# prefix features: ',
           '-1', selected_prefix[1].__len__(),
@@ -130,7 +130,7 @@ class MEMM:
     def train_model(self, sentences, prefix=None, suffix=None, param_vec=None):
         t_start = time.time()
         # prepare data and get statistics
-        print(f'{datetime.datetime.now()} - processing data')
+        print(datetime.datetime.now(), ' - processing data')
         self.sentences = sentences
         word_tag_pairs = []
         # word_number = sum([len(sentence) for sentence in sentences])
@@ -156,6 +156,7 @@ class MEMM:
             self.feature_set += [(lambda pref, t:(lambda cntx: 1 if cntx.word[:pref.__len__()] == pref and cntx.tag == t else 0))(suff, t)
                                  for sufflist in suffix.values() for suff in sufflist for t in self.tags]
         # tag trigrams in datset
+
         # tag bigrams in datset
         # tag unigrams in datset
         # previous word + current tag pairs
@@ -181,7 +182,7 @@ class MEMM:
             self.empirical_counts = self.get_empirical_counts_from_dict()
 
         # calculate the parameters vector
-        print(f'{datetime.datetime.now()} - finding parameter vector')
+        print(datetime.datetime.now(), ' - finding parameter vector')
         if param_vec is None:
             if self.use_vector_form:
                 param_vec = scipy.optimize.minimize(fun=self.l_vector, x0=np.ones(len(self.feature_set)),
@@ -193,12 +194,12 @@ class MEMM:
         # optimize.minimize(self.l,np.zeros(len(self.feature_set)),)
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
-        print(f'{datetime.datetime.now()} - model train complete')
+        print(datetime.datetime.now(), ' - model train complete')
         return time.time() - t_start
 
     # use Viterbi to infer tags for the target sentence
     def infer(self, sentence):
-        print(f'{datetime.datetime.now()} - predict for {sentence}')
+        print(datetime.datetime.now() ,' - predict for {sentence}')
         t_start = time.time()
         parsed_sentence = [word.rstrip() for word in sentence.split(' ')]
         pi = {(0, None, None): 1}
@@ -380,7 +381,7 @@ class MEMM:
 # returns a list of sentences, each sentence is a list of (word,tag)s
 # also performs base verification of input
 def get_parsed_sentences_from_tagged_file(filename):
-    print(f'{datetime.datetime.now()} - loading data from file {filename}')
+    print(datetime.datetime.now(), ' - loading data from file {filename}')
     f_text = open(filename)
     all_words_and_tags = []
     sentences = []
@@ -391,14 +392,14 @@ def get_parsed_sentences_from_tagged_file(filename):
         all_words_and_tags += words_and_tags
     bad_words = [word for word in all_words_and_tags if len(word) != 2]
     if bad_words:
-        print(f'found {len(bad_words)} bad words - {bad_words}')
+        print('found ', len(bad_words),' bad words - ',bad_words)
     all_tags_list = [word[1] for word in all_words_and_tags]
     all_tags_set = set(all_tags_list)
     # tags_counter = Counter(all_tags_list)
     # all_words_list = [word[0] for word in all_words_and_tags]
     # words_counter = Counter(all_words_list)
     # all_words_set = set(all_words_list)
-    print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
+    print(datetime.datetime.now(), ' - found ', len(all_tags_set), ' tags - ', all_tags_set)
     return sentences
 
 def evaluate(model, testset_file, n_samples, max_words=None):
@@ -412,8 +413,8 @@ def evaluate(model, testset_file, n_samples, max_words=None):
         comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
         accuracy.append(sum(comparison) / len(comparison))
         tagged_sentence = [f'{sentence.split(" ")[i]}_{results_tag[i]}' for i in range(len(results_tag))]
-        print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
-    print(f'average accuracy: {"{0:.2f}".format(np.mean(accuracy))}')
+        print('results: time - ', "{0:.2f}".format(inference_time),'[sec], tags - ', " ".join(tagged_sentence))
+    print('average accuracy: ', "{0:.2f}".format(np.mean(accuracy)))
 
 if __name__ == "__main__":
     # load training set
@@ -422,7 +423,7 @@ if __name__ == "__main__":
 
     model = MEMM()
     train_time = model.train_model(parsed_sentences[:1], prefix=pref, suffix=suff)
-    print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
+    print('train: time - ', "{0:.2f}".format(train_time),'[sec]')
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(model.parameter_vector, f)
     # f = open('model_prm.pkl', 'rb')
@@ -432,7 +433,7 @@ if __name__ == "__main__":
     results_tag, inference_time = model.infer(sentence1)
     tagged_sentence1 = ['{}_{}'.format(sentence1.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
     # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
-    print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence1)}')
+    print('results: time - ', "{0:.2f}".format(inference_time),'[sec], tags - '," ".join(tagged_sentence1))
 
     # Evaluate test set:
     evaluate(model, 'test.wtag', 1, 5)
