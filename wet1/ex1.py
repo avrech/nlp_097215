@@ -53,6 +53,9 @@ class MEMM:
         self.empirical_counts = None
         self.word_positive_indices = None
         self.use_vector_form = False
+        self.l_counter = self.l_grad_counter = 0
+        self.safe_softmax = False
+        self.verbose = 0
 
     def train_model(self, sentences, param_vec=None):
         t_start = time.time()
@@ -224,6 +227,10 @@ class MEMM:
             norm += 2 ** self.get_dot_product(tag_vector)
         return norm
 
+    def log(self, msg):
+        if self.verbose:
+            print(msg)
+
     # the ML estimate maximization function
     def l(self, v):
         # proba part
@@ -235,13 +242,27 @@ class MEMM:
                 proba += self.get_dot_product_from_positive_features(self.word_positive_indices[(sentence, i)], v)
                 curr_context = Context.get_context_tagged(sentence, i)
                 curr_exp = 0
-                for tag in self.tags:
-                    curr_context.tag = tag
-                    # vector = self.get_feature_vector_for_context(curr_context)
-                    positive_features = self.get_positive_features_for_context(curr_context)
-                    curr_exp += 2 ** self.get_dot_product_from_positive_features(positive_features, v)
+                if self.safe_softmax:
+                    dot_products = []
+                    for tag in self.tags:
+                        curr_context.tag = tag
+                        # vector = self.get_feature_vector_for_context(curr_context)
+                        positive_features = self.get_positive_features_for_context(curr_context)
+                        dot_products.append(self.get_dot_product_from_positive_features(positive_features, v))
+                    dot_products = np.array(dot_products) - max(dot_products)
+                    for val in dot_products:
+                        curr_exp += 2 ** val
+                else:
+                    for tag in self.tags:
+                        curr_context.tag = tag
+                        # vector = self.get_feature_vector_for_context(curr_context)
+                        positive_features = self.get_positive_features_for_context(curr_context)
+                        curr_exp += 2 ** self.get_dot_product_from_positive_features(positive_features, v)
                 norm_part += math.log(curr_exp, 2)
-        return -(proba - norm_part)
+        res = proba - norm_part
+        self.log(f'l = {self.l_counter},{res}')
+        self.l_counter += 1
+        return -res
 
     # the ML estimate maximization function
     def l_vector(self, v):
@@ -258,7 +279,10 @@ class MEMM:
                     vector = self.get_feature_vector_for_context(curr_context)
                     curr_exp += 2 ** np.dot(v, vector)
                 norm_part += math.log(curr_exp, 2)
-        return -(proba - norm_part)
+        res = proba - norm_part
+        self.log(f'l = {self.l_counter},{res}')
+        self.l_counter += 1
+        return -res
 
     def grad_l(self, v):
         # expected counts
@@ -268,18 +292,39 @@ class MEMM:
                 curr_context = Context.get_context_tagged(sentence, i)
                 normalization = 0
                 nominator = 0
-                for tag in self.tags:
-                    curr_context.tag = tag
-                    vector = self.get_feature_vector_for_context(curr_context)
-                    curr_positive_features = self.word_positive_indices[(sentence, i)]
-                    curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
-                    normalization += curr_exp
-                    nominator += np.multiply(vector, curr_exp)
+                if self.safe_softmax:
+                    dot_products = []
+                    vectors = []
+                    # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
+                    for tag in self.tags:
+                        curr_context.tag = tag
+                        vector = self.get_feature_vector_for_context(curr_context)
+                        vectors.append(vector)
+                        curr_positive_features = self.word_positive_indices[(sentence, i)]
+                        dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
+                    dot_products = np.array(dot_products) - max(dot_products)
+                    for j, product in enumerate(dot_products):
+                        curr_exp = 2 ** product
+                        normalization += curr_exp
+                        nominator += np.multiply(vectors[j], curr_exp)
+                else:
+                    for tag in self.tags:
+                        curr_context.tag = tag
+                        vector = self.get_feature_vector_for_context(curr_context)
+                        curr_positive_features = self.word_positive_indices[(sentence, i)]
+                        curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
+                        normalization += curr_exp
+                        nominator += np.multiply(vector, curr_exp)
 
                 expected_counts += nominator / normalization if normalization > 0 else 0
-        return -(self.empirical_counts - expected_counts)
+        res = self.empirical_counts - expected_counts
+        self.log(f'grad = {self.l_grad_counter},{res}')
+        self.l_grad_counter += 1
+        return -res
 
     def grad_l_vector(self, v):
+        self.log(f'grad = {self.l_grad_counter}')
+        self.l_grad_counter += 1
         # expected counts
         expected_counts = 0
         for sentence in self.sentences:
@@ -295,7 +340,10 @@ class MEMM:
                     nominator += np.multiply(vector, curr_exp)
 
                 expected_counts += nominator / normalization if normalization > 0 else 0
-        return -(self.empirical_counts - expected_counts)
+        res = self.empirical_counts - expected_counts
+        self.log(f'grad = {self.l_grad_counter},{res}')
+        self.l_grad_counter += 1
+        return -res
 
     def test(self, text, annotated=False):
         pass
