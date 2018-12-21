@@ -125,9 +125,7 @@ class MEMM:
                             norm_for_context[(word_index, prev_tag, prev_prev_tag)] = \
                                 self.get_context_norm(context_dict[(prev_tag, prev_prev_tag)])
                     transition_proba = \
-                        {prev_prev_tag: self.get_tag_proba(tag, Context.get_context_untagged(parsed_sentence,
-                                                                                             word_index - 1, tag,
-                                                                                             prev_tag, prev_prev_tag),
+                        {prev_prev_tag: self.get_tag_proba(tag, context_dict[(prev_tag, prev_prev_tag)],
                                                            norm=norm_for_context[(word_index, prev_tag, prev_prev_tag)])
                          for prev_prev_tag in self.enriched_tags if past_proba[prev_prev_tag] != 0}
 
@@ -261,8 +259,8 @@ if __name__ == "__main__":
     model.train_model(parsed_sentences[:10])
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(model.parameter_vector, f)
-    f = open('model_prm.pkl', 'rb')
-    param_vector = pickle.load(f)
+    # f = open('model_prm.pkl', 'rb')
+    # param_vector = pickle.load(f)
     # model.test('bla', annotated=True)
     sentence1 = ' '.join([word[0] for word in parsed_sentences[0]])
     results_tag, inference_time = model.infer(sentence1)
