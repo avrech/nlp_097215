@@ -51,11 +51,16 @@ class MEMM:
         self.sentences = None
         self.parameter_vector = None
         self.empirical_counts = None
+        self.word_positive_indices = None
+        self.use_vector_form = False
 
     def train_model(self, sentences, param_vec=None):
+        t_start = time.time()
         # prepare data and get statistics
         print(f'{datetime.datetime.now()} - processing data')
+        self.sentences = sentences
         word_tag_pairs = []
+        # word_number = sum([len(sentence) for sentence in sentences])
         for sentence in sentences:
             for word_tag in sentence:
                 if word_tag not in word_tag_pairs:
@@ -79,28 +84,42 @@ class MEMM:
 
         # for each word in the corpus, find its feature vector
         word_vectors = []
+        word_positive_indices = {}
         for sentence in sentences:
             for i in range(len(sentence)):
                 context = Context.get_context_tagged(sentence, i)
-                vector = self.get_feature_vector_for_context(context)
-                word_vectors.append(vector)
-        self.word_vectors = np.array(word_vectors)
-        self.sentences = sentences
-        self.empirical_counts = np.sum(self.word_vectors, axis=0)
+                if self.use_vector_form:
+                    vector = self.get_feature_vector_for_context(context)
+                    word_vectors.append(vector)
+                else:
+                    positive_indices = self.get_positive_features_for_context(context)
+                    word_positive_indices[(sentence, i)] = positive_indices
+        if self.use_vector_form:
+            self.word_vectors = np.array(word_vectors)
+            self.empirical_counts = np.sum(self.word_vectors, axis=0)
+        else:
+            self.word_positive_indices = word_positive_indices
+            self.empirical_counts = self.get_empirical_counts_from_dict()
 
         # calculate the parameters vector
         print(f'{datetime.datetime.now()} - finding parameter vector')
         if param_vec is None:
-            param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
-                                                jac=self.grad_l)
+            if self.use_vector_form:
+                param_vec = scipy.optimize.minimize(fun=self.l_vector, x0=np.ones(len(self.feature_set)),
+                                                    method='L-BFGS-B', jac=self.grad_l_vector)
+            else:
+                param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
+                                                    jac=self.grad_l)
         # param_vec = scipy.optimize.fmin_l_bfgs_b(self.l, np.zeros(len(self.feature_set)), self.grad_l)
         # optimize.minimize(self.l,np.zeros(len(self.feature_set)),)
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
         print(f'{datetime.datetime.now()} - model train complete')
+        return time.time() - t_start
 
     # use Viterbi to infer tags for the target sentence
     def infer(self, sentence):
+        print(f'{datetime.datetime.now()} - predict for {sentence}')
         t_start = time.time()
         parsed_sentence = [word.rstrip() for word in sentence.split(' ')]
         pi = {(0, None, None): 1}
@@ -166,8 +185,25 @@ class MEMM:
         vector = [feature(context) for feature in self.feature_set]
         return vector
 
+    def get_positive_features_for_context(self, context):
+        vector = [feature(context) for feature in self.feature_set]
+        return [vector.index(v) for v in vector if v != 0]
+
+    def get_empirical_counts_from_dict(self):
+        emprical_counts = np.zeros(len(self.feature_set))
+        for positive_features in self.word_positive_indices.values():
+            emprical_counts[positive_features] += 1
+        return emprical_counts
+
     def get_dot_product(self, feature_vector):
         dot_product = sum([feature_vector[i] * self.parameter_vector[i] for i in range(len(feature_vector))])
+        return dot_product
+
+    @staticmethod
+    def get_dot_product_from_positive_features(positive_indices, v):
+        dot_product = 0
+        for positive_index in positive_indices:
+            dot_product += v[positive_index]
         return dot_product
 
     # soft max
@@ -191,6 +227,25 @@ class MEMM:
     # the ML estimate maximization function
     def l(self, v):
         # proba part
+        proba = 0
+        # normalization part
+        norm_part = 0
+        for sentence in self.sentences:
+            for i in range(len(sentence)):
+                proba += self.get_dot_product_from_positive_features(self.word_positive_indices[(sentence, i)], v)
+                curr_context = Context.get_context_tagged(sentence, i)
+                curr_exp = 0
+                for tag in self.tags:
+                    curr_context.tag = tag
+                    # vector = self.get_feature_vector_for_context(curr_context)
+                    positive_features = self.get_positive_features_for_context(curr_context)
+                    curr_exp += 2 ** self.get_dot_product_from_positive_features(positive_features, v)
+                norm_part += math.log(curr_exp, 2)
+        return -(proba - norm_part)
+
+    # the ML estimate maximization function
+    def l_vector(self, v):
+        # proba part
         proba = sum(np.dot(self.word_vectors, v))
         # normalization part
         norm_part = 0
@@ -206,6 +261,25 @@ class MEMM:
         return -(proba - norm_part)
 
     def grad_l(self, v):
+        # expected counts
+        expected_counts = 0
+        for sentence in self.sentences:
+            for i in range(len(sentence)):
+                curr_context = Context.get_context_tagged(sentence, i)
+                normalization = 0
+                nominator = 0
+                for tag in self.tags:
+                    curr_context.tag = tag
+                    vector = self.get_feature_vector_for_context(curr_context)
+                    curr_positive_features = self.word_positive_indices[(sentence, i)]
+                    curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
+                    normalization += curr_exp
+                    nominator += np.multiply(vector, curr_exp)
+
+                expected_counts += nominator / normalization if normalization > 0 else 0
+        return -(self.empirical_counts - expected_counts)
+
+    def grad_l_vector(self, v):
         # expected counts
         expected_counts = 0
         for sentence in self.sentences:
@@ -237,7 +311,7 @@ def get_parsed_sentences_from_tagged_file(filename):
     sentences = []
     for row in f_text:
         tagged_words = [word.rstrip() for word in row.split(' ')]
-        words_and_tags = [tagged_word.split('_') for tagged_word in tagged_words]
+        words_and_tags = tuple([tuple(tagged_word.split('_')) for tagged_word in tagged_words])
         sentences.append(words_and_tags)
         all_words_and_tags += words_and_tags
     bad_words = [word for word in all_words_and_tags if len(word) != 2]
@@ -257,7 +331,8 @@ if __name__ == "__main__":
     # load training set
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
     model = MEMM()
-    model.train_model(parsed_sentences[:10])
+    train_time = model.train_model(parsed_sentences[:30])
+    print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(model.parameter_vector, f)
     # f = open('model_prm.pkl', 'rb')
