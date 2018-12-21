@@ -40,6 +40,8 @@ class Context:
 
 
 class MEMM:
+    BEAM_MIN = 10
+
     def __init__(self):
         self.tags = []
         self.enriched_tags = []
@@ -139,8 +141,8 @@ class MEMM:
             min_proba_for_stage = 1
             count_entries_per_proba = len([pi_val for pi_key, pi_val in pi_temp.items()
                                            if pi_val >= min_proba_for_stage])
-            BEAM_MIN = 10
-            while count_entries_per_proba < BEAM_MIN:
+
+            while count_entries_per_proba < self.BEAM_MIN:
                 min_proba_for_stage = max([pi_val for pi_key, pi_val in pi_temp.items()
                                            if pi_val < min_proba_for_stage])
                 count_entries_per_proba = len([pi_val for pi_key, pi_val in pi_temp.items()
@@ -209,7 +211,6 @@ class MEMM:
         for sentence in self.sentences:
             for i in range(len(sentence)):
                 curr_context = Context.get_context_tagged(sentence, i)
-                curr_exp = 0
                 normalization = 0
                 nominator = 0
                 for tag in self.tags:
@@ -217,7 +218,7 @@ class MEMM:
                     vector = self.get_feature_vector_for_context(curr_context)
                     curr_exp = 2 ** np.dot(v, vector)
                     normalization += curr_exp
-                    nominator += np.dot(vector, curr_exp)
+                    nominator += np.multiply(vector, curr_exp)
 
                 expected_counts += nominator / normalization if normalization > 0 else 0
         return -(self.empirical_counts - expected_counts)
@@ -264,6 +265,6 @@ if __name__ == "__main__":
     # model.test('bla', annotated=True)
     sentence1 = ' '.join([word[0] for word in parsed_sentences[0]])
     results_tag, inference_time = model.infer(sentence1)
-    tagged_sentence1 = [f'{sentence1.split(" ")[i]}_{results_tag[i]}' for i in range(len(results_tag))]
+    tagged_sentence1 = ['{}_{}'.format(sentence1.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
     # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
     print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence1)}')
