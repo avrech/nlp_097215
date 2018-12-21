@@ -6,7 +6,80 @@ import scipy
 from scipy import optimize
 import pickle
 import time
+# receives input file (of tagged sentences),
+# returns a list of sentences, each sentence is a list of (word,tag)s
+# also performs base verification of input
+def get_parsed_sentences_from_tagged_file(filename):
+    print(f'{datetime.datetime.now()} - loading data from file {filename}')
+    f_text = open(filename)
+    all_words_and_tags = []
+    sentences = []
+    for row in f_text:
+        tagged_words = [word.rstrip() for word in row.split(' ')]
+        words_and_tags = [tagged_word.split('_') for tagged_word in tagged_words]
+        sentences.append(words_and_tags)
+        all_words_and_tags += words_and_tags
+    bad_words = [word for word in all_words_and_tags if len(word) != 2]
+    if bad_words:
+        print(f'found {len(bad_words)} bad words - {bad_words}')
+    all_tags_list = [word[1] for word in all_words_and_tags]
+    all_tags_set = set(all_tags_list)
+    # tags_counter = Counter(all_tags_list)
+    # all_words_list = [word[0] for word in all_words_and_tags]
+    # words_counter = Counter(all_words_list)
+    # all_words_set = set(all_words_list)
+    print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
+    return sentences
 
+def pre_process_data(train_set):
+    # load training set
+    parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
+    words = [word_tag_pair[0] for sentence in parsed_sentences for word_tag_pair in sentence]
+
+    # Extract prefix:
+    prefix = {1: {}, 2: {}, 3: {}, 4: {}}
+    suffix = {1: {}, 2: {}, 3: {}, 4: {}}
+    for word in words:
+        for l in np.arange(1, 5):
+            if word.__len__() >= l:
+                pref = word[:l]
+                prefix[l][pref] = prefix[l].get(pref, 0) + 1
+                suff = word[-l:]
+                suffix[l][pref] = suffix[l].get(suff, 0) + 1
+    # Define thresholds:
+    pref_th = {1: 1000, 2: 1000, 3: 500, 4: 500}
+    selected_prefix = {1: [], 2: [], 3: [], 4: []}
+    print('prefix counts:')
+    for l in np.arange(1, 5):
+        for p in prefix[l].keys():
+            if prefix[l][p] > pref_th[l]:
+                selected_prefix[l].append(p)
+                print(p, ': ', prefix[l][p])
+
+    suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
+    selected_suffix = {1: [], 2: [], 3: [], 4: []}
+    print('suffix counts:')
+    for l in np.arange(1, 5):
+        for p in suffix[l].keys():
+            if suffix[l][p] > suff_th[l]:
+                selected_suffix[l].append(p)
+                print(p, ': ', suffix[l][p])
+
+    print('# prefix features: ',
+          '-1', selected_prefix[1].__len__(),
+          '-2', selected_prefix[2].__len__(),
+          '-3', selected_prefix[3].__len__(),
+          '-4', selected_prefix[4].__len__(),
+          ' | Total-', sum([p.__len__() for p in selected_prefix.values()]))
+    print('# suffix features: ',
+          '-1', selected_suffix[1].__len__(),
+          '-2', selected_suffix[2].__len__(),
+          '-3', selected_suffix[3].__len__(),
+          '-4', selected_suffix[4].__len__(),
+          ' | Total-', sum([p.__len__() for p in selected_suffix.values()]))
+
+    print('preprocess finished')
+    return parsed_sentences, selected_prefix, selected_suffix
 
 class Context:
     def __init__(self, word, tag, history, prev_tag, prev_prev_tag, next_word):
@@ -52,7 +125,7 @@ class MEMM:
         self.parameter_vector = None
         self.empirical_counts = None
 
-    def train_model(self, sentences, param_vec=None):
+    def train_model(self, sentences, prefix=None, suffix=None, param_vec=None):
         # prepare data and get statistics
         print(f'{datetime.datetime.now()} - processing data')
         word_tag_pairs = []
@@ -65,12 +138,18 @@ class MEMM:
 
         self.enriched_tags = [None] + self.tags
 
-        # define the features set
-        # feature-word pairs in dataset
+        # define the features set:
+        # word-tag pairs in dataset
         self.feature_set += [(lambda w, t:(lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
                              for w, t in word_tag_pairs]
         # prefixes <= 4 and tag pairs in dataset
+        if prefix is not None:
+            self.feature_set += [(lambda pref, t:(lambda cntx: 1 if cntx.word[:pref.__len__()] == pref and cntx.tag == t else 0))(pref, t)
+                                 for preflist in prefix.values() for pref in preflist for t in self.tags]
         # suffixes <= 4 and tag pairs in dataset
+        if suffix is not None:
+            self.feature_set += [(lambda pref, t:(lambda cntx: 1 if cntx.word[:pref.__len__()] == pref and cntx.tag == t else 0))(suff, t)
+                                 for sufflist in suffix.values() for suff in sufflist for t in self.tags]
         # tag trigrams in datset
         # tag bigrams in datset
         # tag unigrams in datset
@@ -268,9 +347,11 @@ def evaluate(model, testset_file, n_samples, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
+    # preprocess data, extract relevant prefix/suffix etc.
+    parsed_sentences, pref, suff = pre_process_data('train.wtag')
+
     model = MEMM()
-    model.train_model(parsed_sentences[:10])
+    model.train_model(parsed_sentences[:1], prefix=pref, suffix=suff)
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(model.parameter_vector, f)
     # f = open('model_prm.pkl', 'rb')
