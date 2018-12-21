@@ -326,6 +326,7 @@ def get_parsed_sentences_from_tagged_file(filename):
     print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
     return sentences
 
+
 def evaluate(model, testset_file, n_samples, max_words=None):
     parsed_testset = get_parsed_sentences_from_tagged_file(testset_file)
     predictions = []
@@ -336,26 +337,29 @@ def evaluate(model, testset_file, n_samples, max_words=None):
         predictions.append(results_tag)
         comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
         accuracy.append(sum(comparison) / len(comparison))
-        tagged_sentence = [f'{sentence.split(" ")[i]}_{results_tag[i]}' for i in range(len(results_tag))]
+        tagged_sentence = ['{}_{}'.format(sentence.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
         print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
     print(f'average accuracy: {"{0:.2f}".format(np.mean(accuracy))}')
 
 if __name__ == "__main__":
     # load training set
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
-    model = MEMM()
-    train_time = model.train_model(parsed_sentences[:30])
+    my_model = MEMM()
+    train_time = my_model.train_model(parsed_sentences[:10])
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
-        pickle.dump(model.parameter_vector, f)
+        pickle.dump(my_model.parameter_vector, f)
     # f = open('model_prm.pkl', 'rb')
     # param_vector = pickle.load(f)
     # model.test('bla', annotated=True)
-    sentence1 = ' '.join([word[0] for word in parsed_sentences[0]])
-    results_tag, inference_time = model.infer(sentence1)
-    tagged_sentence1 = ['{}_{}'.format(sentence1.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
-    # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
-    print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence1)}')
+
+    # sentence1 = ' '.join([word[0] for word in parsed_sentences[0]])
+    # results_tag, inference_time = model.infer(sentence1)
+    # tagged_sentence1 = ['{}_{}'.format(sentence1.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
+    # # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
+    # print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence1)}')
+
+    evaluate(my_model, 'train.wtag', 1, 5)
 
     # Evaluate test set:
-    evaluate(model, 'test.wtag', 1, 5)
+    evaluate(my_model, 'test.wtag', 1, 5)
