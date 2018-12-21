@@ -186,8 +186,7 @@ class MEMM:
         return vector
 
     def get_positive_features_for_context(self, context):
-        vector = [feature(context) for feature in self.feature_set]
-        return [vector.index(v) for v in vector if v != 0]
+        return np.nonzero(np.array([feature(context) for feature in self.feature_set]))
 
     def get_empirical_counts_from_dict(self):
         emprical_counts = np.zeros(len(self.feature_set))
@@ -201,10 +200,7 @@ class MEMM:
 
     @staticmethod
     def get_dot_product_from_positive_features(positive_indices, v):
-        dot_product = 0
-        for positive_index in positive_indices:
-            dot_product += v[positive_index]
-        return dot_product
+        return np.sum(np.take(v, positive_indices))
 
     # soft max
     def get_tag_proba(self, tag, context, norm=None):
