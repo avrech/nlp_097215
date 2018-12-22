@@ -12,6 +12,7 @@ class Context:
     def __init__(self, word, tag, history, prev_tag, prev_prev_tag, next_word):
         self.word = word
         self.tag = tag
+        self.index = len(history)
         self.history = history
         self.prev_tag = prev_tag
         self.prev_prev_tag = prev_prev_tag
@@ -52,36 +53,159 @@ class MEMM:
         self.parameter_vector = None
         self.empirical_counts = None
         self.word_positive_indices = None
-        self.use_vector_form = False
+        self.use_vector_form = True
         self.l_counter = self.l_grad_counter = 0
-        self.safe_softmax = False
-        self.verbose = 0
+        self.safe_softmax = True
+        self.verbose = 1
+
+    @staticmethod
+    def safe_add(curr_dict, key):
+        if key not in curr_dict:
+            curr_dict[key] = 1
+        else:
+            curr_dict[key] += 1
+
+    def get_text_statistics(self):
+        print('{} - getting text stats'.format(datetime.datetime.now()))
+        word_tag_counts = {}
+        word_unigrams_counts = {}
+        tag_unigrams_counts = {}
+        tag_bigrams_counts = {}
+        word_bigrams_counts = {}
+        tag_trigrams_counts = {}
+        word_trigrams_counts = {}
+        prefix_tag_counter = {}
+        suffix_tag_counter = {}
+        capital_first_letter_tag = {}
+        capital_word_tag = {}
+        number_tag = {}
+        first_word_tag = {}
+        second_word_tag = {}
+        last_word_tag = {}
+
+        for sentence in self.sentences:
+            for i, word_tag in enumerate(sentence):
+
+                word = word_tag[0]
+                prev_word = sentence[i - 1][0] if i > 0 else None
+                prev_prev_word = sentence[i - 2][0] if i > 1 else None
+
+                tag = word_tag[1]
+                prev_tag = sentence[i - 1][1] if i > 0 else None
+                prev_prev_tag = sentence[i - 2][1] if i > 1 else None
+
+                self.safe_add(word_unigrams_counts, word)
+                self.safe_add(tag_unigrams_counts, tag)
+                self.safe_add(word_tag_counts, word_tag)
+                self.safe_add(word_bigrams_counts, (prev_word, word))
+                self.safe_add(tag_bigrams_counts, (prev_tag, tag))
+                self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
+                self.safe_add(tag_trigrams_counts, (prev_prev_tag, prev_tag, tag))
+
+                self.safe_add(prefix_tag_counter, (word[:1], tag))
+                if len(word) > 1:
+                    self.safe_add(suffix_tag_counter, (word[-1:], tag))
+                    self.safe_add(prefix_tag_counter, (word[:2], tag))
+                if len(word) > 2:
+                    self.safe_add(suffix_tag_counter, (word[-2:], tag))
+                    self.safe_add(prefix_tag_counter, (word[:3], tag))
+                if len(word) > 3:
+                    self.safe_add(suffix_tag_counter, (word[-3:], tag))
+                    self.safe_add(prefix_tag_counter, (word[:4], tag))
+                if len(word) > 4:
+                    self.safe_add(suffix_tag_counter, (word[-4:], tag))
+
+                if word[0].isupper():
+                    self.safe_add(capital_first_letter_tag, tag)
+                if all([letter.isupper() for letter in word]):
+                    self.safe_add(capital_word_tag, tag)
+                if word.replace('.','',1).isdigit():
+                    self.safe_add(number_tag, tag)
+
+                if i == 1:
+                    self.safe_add(first_word_tag, tag)
+                if i == 2:
+                    self.safe_add(second_word_tag, tag)
+                if i == len(sentence) - 1:
+                    self.safe_add(last_word_tag, tag)
+
+        return {'word_count': word_unigrams_counts,
+                'tag_count': tag_unigrams_counts,
+                'word_tag_pairs': word_tag_counts,
+                'word_bigrams': word_bigrams_counts,
+                'tag_bigrams': tag_bigrams_counts,
+                'word_trigrams': word_trigrams_counts,
+                'tag_trigrams': tag_trigrams_counts,
+                'prefix_tag': prefix_tag_counter,
+                'suffix_tag': suffix_tag_counter,
+                'capital_first_letter_tag': capital_first_letter_tag,
+                'capital_word_tag': capital_word_tag,
+                'number_tag': number_tag,
+                'first_word_tag': first_word_tag,
+                'second_word_tag': second_word_tag,
+                'last_word_tag': last_word_tag,
+                }
 
     def train_model(self, sentences, param_vec=None):
         t_start = time.time()
         # prepare data and get statistics
-        print(f'{datetime.datetime.now()} - processing data')
+        print('{} - processing data'.format(datetime.datetime.now()))
         self.sentences = sentences
-        word_tag_pairs = []
-        # word_number = sum([len(sentence) for sentence in sentences])
-        for sentence in sentences:
-            for word_tag in sentence:
-                if word_tag not in word_tag_pairs:
-                    word_tag_pairs.append(word_tag)
-                if word_tag[1] not in self.tags:
-                    self.tags.append(word_tag[1])
+        text_stats = self.get_text_statistics()
 
+        print('{} - preparing features'.format(datetime.datetime.now()))
+        self.tags = list(text_stats['tag_count'].keys())
         self.enriched_tags = [None] + self.tags
 
         # define the features set
-        # feature-word pairs in dataset
+        # feature-word pairs in dataset (#100)
         self.feature_set += [(lambda w, t:(lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
-                             for w, t in word_tag_pairs]
-        # prefixes <= 4 and tag pairs in dataset
-        # suffixes <= 4 and tag pairs in dataset
-        # tag trigrams in datset
-        # tag bigrams in datset
-        # tag unigrams in datset
+                             for w, t in text_stats['word_tag_pairs'].keys()]
+        # suffixes <= 4 and tag pairs in dataset (#101)
+        self.feature_set += [(lambda suff, t: (lambda cntx: 1 if cntx.word.endswith(suff) and
+                                                                 cntx.tag == t else 0))(suff, t)
+                             for suff, t in text_stats['suffix_tag'].keys()]
+        # prefixes <= 4 and tag pairs in dataset (#102)
+        self.feature_set += [(lambda pref, t: (lambda cntx: 1 if cntx.word.startswith(pref) and
+                                                                 cntx.tag == t else 0))(pref, t)
+                             for pref, t in text_stats['prefix_tag'].keys()]
+        # tag trigrams in datset (#103)
+        self.feature_set += [(lambda prev_prev_tag, prev_tag, tag:
+                              (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag
+                                                 and cntx.prev_prev_tag == prev_prev_tag else 0))
+                             (prev_prev_tag, prev_tag, tag)
+                             for prev_prev_tag, prev_tag, tag in text_stats['tag_trigrams'].keys()]
+        # tag bigrams in datset (#104)
+        self.feature_set += [(lambda prev_tag, tag:
+                              (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag else 0))(prev_tag, tag)
+                             for prev_tag, tag in text_stats['tag_bigrams'].keys()]
+        # tag unigrams in datset (#105)
+        self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
+
+        # capital first letter tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
+                             for t in text_stats['capital_first_letter_tag'].keys()]
+        # capital word tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in cntx.word])
+                                                           and cntx.tag == t else 0))(t)
+                             for t in text_stats['capital_word_tag'].keys()]
+        # number tag feature
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word.replace('.','',1).isdigit()
+                                                           and cntx.tag == t else 0))(t)
+                             for t in text_stats['number_tag'].keys()]
+
+        # first word in sentence tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+                             for t in text_stats['first_word_tag'].keys()]
+
+        # second word in sentence tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+                             for t in text_stats['second_word_tag'].keys()]
+
+        # last word in sentence tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+                             for t in text_stats['last_word_tag'].keys()]
+
         # previous word + current tag pairs
         # next word + current tag pairs
 
@@ -109,12 +233,11 @@ class MEMM:
         if param_vec is None:
             if self.use_vector_form:
                 param_vec = scipy.optimize.minimize(fun=self.l_vector, x0=np.ones(len(self.feature_set)),
-                                                    method='L-BFGS-B', jac=self.grad_l_vector)
+                                                    method='L-BFGS-B', jac=self.grad_l_vector,
+                                                    options={'maxiter': 17, 'maxfun': 20})
             else:
                 param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
-                                                    jac=self.grad_l)
-        # param_vec = scipy.optimize.fmin_l_bfgs_b(self.l, np.zeros(len(self.feature_set)), self.grad_l)
-        # optimize.minimize(self.l,np.zeros(len(self.feature_set)),)
+                                                    jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
         print(f'{datetime.datetime.now()} - model train complete')
@@ -238,7 +361,7 @@ class MEMM:
                 proba += self.get_dot_product_from_positive_features(self.word_positive_indices[(sentence, i)], v)
                 curr_context = Context.get_context_tagged(sentence, i)
                 curr_exp = 0
-                if self.safe_softmax:
+                if False:  # self.safe_softmax:
                     dot_products = []
                     for tag in self.tags:
                         curr_context.tag = tag
@@ -314,7 +437,7 @@ class MEMM:
 
                 expected_counts += nominator / normalization if normalization > 0 else 0
         res = self.empirical_counts - expected_counts
-        self.log(f'grad = {self.l_grad_counter},{res}')
+        self.log(f'grad = {self.l_grad_counter}')
         self.l_grad_counter += 1
         return -res
 
@@ -337,7 +460,7 @@ class MEMM:
 
                 expected_counts += nominator / normalization if normalization > 0 else 0
         res = self.empirical_counts - expected_counts
-        self.log(f'grad = {self.l_grad_counter},{res}')
+        self.log(f'grad = {self.l_grad_counter}')
         self.l_grad_counter += 1
         return -res
 
@@ -389,7 +512,7 @@ if __name__ == "__main__":
     # load training set
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
     my_model = MEMM()
-    train_time = my_model.train_model(parsed_sentences[:10])
+    train_time = my_model.train_model(parsed_sentences[:20])
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(my_model.parameter_vector, f)
