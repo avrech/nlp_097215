@@ -73,6 +73,9 @@ class MEMM:
         word_bigrams_counts = {}
         tag_trigrams_counts = {}
         word_trigrams_counts = {}
+        prefix_tag_counter = {}
+        suffix_tag_counter = {}
+
         for sentence in self.sentences:
             for i, word_tag in enumerate(sentence):
 
@@ -92,6 +95,19 @@ class MEMM:
                 self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
                 self.safe_add(tag_trigrams_counts, (prev_prev_tag, prev_tag, tag))
 
+                self.safe_add(prefix_tag_counter, (word[:1], tag))
+                if len(word) > 1:
+                    self.safe_add(suffix_tag_counter, (word[-1:], tag))
+                    self.safe_add(prefix_tag_counter, (word[:2], tag))
+                if len(word) > 2:
+                    self.safe_add(suffix_tag_counter, (word[-2:], tag))
+                    self.safe_add(prefix_tag_counter, (word[:3], tag))
+                if len(word) > 3:
+                    self.safe_add(suffix_tag_counter, (word[-3:], tag))
+                    self.safe_add(prefix_tag_counter, (word[:4], tag))
+                if len(word) > 4:
+                    self.safe_add(suffix_tag_counter, (word[-4:], tag))
+
         return {'word_count': word_unigrams_counts,
                 'tag_count': tag_unigrams_counts,
                 'word_tag_pairs': word_tag_counts,
@@ -99,6 +115,8 @@ class MEMM:
                 'tag_bigrams': tag_bigrams_counts,
                 'word_trigrams': word_trigrams_counts,
                 'tag_trigrams': tag_trigrams_counts,
+                'prefix_tag': prefix_tag_counter,
+                'suffix_tag': suffix_tag_counter
                 }
 
     def train_model(self, sentences, param_vec=None):
@@ -113,18 +131,30 @@ class MEMM:
         self.enriched_tags = [None] + self.tags
 
         # define the features set
-        # feature-word pairs in dataset
+        # feature-word pairs in dataset (#100)
         self.feature_set += [(lambda w, t:(lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
                              for w, t in text_stats['word_tag_pairs'].keys()]
-        # prefixes <= 4 and tag pairs in dataset
-        # suffixes <= 4 and tag pairs in dataset
-        # tag trigrams in datset
-        # tag unigrams in datset
-        # self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
-        # tag bigrams in datset
+        # suffixes <= 4 and tag pairs in dataset (#101)
+        self.feature_set += [(lambda suff, t: (lambda cntx: 1 if cntx.word.endswith(suff) and
+                                                                 cntx.tag == t else 0))(suff, t)
+                             for suff, t in text_stats['suffix_tag'].keys()]
+        # prefixes <= 4 and tag pairs in dataset (#102)
+        self.feature_set += [(lambda pref, t: (lambda cntx: 1 if cntx.word.startswith(pref) and
+                                                                 cntx.tag == t else 0))(pref, t)
+                             for pref, t in text_stats['prefix_tag'].keys()]
+        # tag trigrams in datset (#103)
+        self.feature_set += [(lambda prev_prev_tag, prev_tag, tag:
+                              (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag
+                                                 and cntx.prev_prev_tag == prev_prev_tag else 0))
+                             (prev_prev_tag, prev_tag, tag)
+                             for prev_prev_tag, prev_tag, tag in text_stats['tag_trigrams'].keys()]
+        # tag bigrams in datset (#104)
         self.feature_set += [(lambda prev_tag, tag:
                               (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag else 0))(prev_tag, tag)
                              for prev_tag, tag in text_stats['tag_bigrams'].keys()]
+        # tag unigrams in datset (#105)
+        self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
+
         # previous word + current tag pairs
         # next word + current tag pairs
 
@@ -437,7 +467,7 @@ if __name__ == "__main__":
     # load training set
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
     my_model = MEMM()
-    train_time = my_model.train_model(parsed_sentences[:30])
+    train_time = my_model.train_model(parsed_sentences[:20])
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(my_model.parameter_vector, f)
