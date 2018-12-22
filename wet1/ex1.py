@@ -12,6 +12,7 @@ class Context:
     def __init__(self, word, tag, history, prev_tag, prev_prev_tag, next_word):
         self.word = word
         self.tag = tag
+        self.index = len(history)
         self.history = history
         self.prev_tag = prev_tag
         self.prev_prev_tag = prev_prev_tag
@@ -75,6 +76,12 @@ class MEMM:
         word_trigrams_counts = {}
         prefix_tag_counter = {}
         suffix_tag_counter = {}
+        capital_first_letter_tag = {}
+        capital_word_tag = {}
+        number_tag = {}
+        first_word_tag = {}
+        second_word_tag = {}
+        last_word_tag = {}
 
         for sentence in self.sentences:
             for i, word_tag in enumerate(sentence):
@@ -108,6 +115,20 @@ class MEMM:
                 if len(word) > 4:
                     self.safe_add(suffix_tag_counter, (word[-4:], tag))
 
+                if word[0].isupper():
+                    self.safe_add(capital_first_letter_tag, tag)
+                if all([letter.isupper() for letter in word]):
+                    self.safe_add(capital_word_tag, tag)
+                if word.replace('.','',1).isdigit():
+                    self.safe_add(number_tag, tag)
+
+                if i == 1:
+                    self.safe_add(first_word_tag, tag)
+                if i == 2:
+                    self.safe_add(second_word_tag, tag)
+                if i == len(sentence) - 1:
+                    self.safe_add(last_word_tag, tag)
+
         return {'word_count': word_unigrams_counts,
                 'tag_count': tag_unigrams_counts,
                 'word_tag_pairs': word_tag_counts,
@@ -116,7 +137,13 @@ class MEMM:
                 'word_trigrams': word_trigrams_counts,
                 'tag_trigrams': tag_trigrams_counts,
                 'prefix_tag': prefix_tag_counter,
-                'suffix_tag': suffix_tag_counter
+                'suffix_tag': suffix_tag_counter,
+                'capital_first_letter_tag': capital_first_letter_tag,
+                'capital_word_tag': capital_word_tag,
+                'number_tag': number_tag,
+                'first_word_tag': first_word_tag,
+                'second_word_tag': second_word_tag,
+                'last_word_tag': last_word_tag,
                 }
 
     def train_model(self, sentences, param_vec=None):
@@ -155,6 +182,30 @@ class MEMM:
         # tag unigrams in datset (#105)
         self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
 
+        # capital first letter tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
+                             for t in text_stats['capital_first_letter_tag'].keys()]
+        # capital word tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in cntx.word])
+                                                           and cntx.tag == t else 0))(t)
+                             for t in text_stats['capital_word_tag'].keys()]
+        # number tag feature
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word.replace('.','',1).isdigit()
+                                                           and cntx.tag == t else 0))(t)
+                             for t in text_stats['number_tag'].keys()]
+
+        # first word in sentence tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+                             for t in text_stats['first_word_tag'].keys()]
+
+        # second word in sentence tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+                             for t in text_stats['second_word_tag'].keys()]
+
+        # last word in sentence tag
+        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+                             for t in text_stats['last_word_tag'].keys()]
+
         # previous word + current tag pairs
         # next word + current tag pairs
 
@@ -187,8 +238,6 @@ class MEMM:
             else:
                 param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
                                                     jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
-        # param_vec = scipy.optimize.fmin_l_bfgs_b(self.l, np.zeros(len(self.feature_set)), self.grad_l)
-        # optimize.minimize(self.l,np.zeros(len(self.feature_set)),)
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
         print(f'{datetime.datetime.now()} - model train complete')
