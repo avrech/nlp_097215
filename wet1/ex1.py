@@ -34,7 +34,52 @@ def get_parsed_sentences_from_tagged_file(filename):
 def pre_process_data(train_set):
     # load training set
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
-    words = [word_tag_pair[0] for sentence in parsed_sentences for word_tag_pair in sentence]
+    ''' Define feature set '''
+    feature_set = []
+
+    words = set()
+    tags = set()
+    trigrams = set()  # trigram = [word(i), tag(i), tag(i-1), tag(i-2)]
+    bigrams = set()  # bigram = [word(i), tag(i), tag(i-1)]
+    unigrams = set()  # unigram = [word(i), tag(i)]
+    prev_w_cur_t = set()
+    next_w_cur_t = set()
+    for sentence in parsed_sentences:
+        for ii, w_t in enumerate(sentence):
+            words.add(w_t[0])
+            tags.add(w_t[1])
+            unigrams.add(w_t)
+            if ii < sentence.__len__()-2:
+                bigrams.add((sentence[ii+1][0], sentence[ii+1][1], w_t[1]))
+            if ii < sentence.__len__()-3:
+                trigrams.add((sentence[ii+2][0], sentence[ii+2][1], sentence[ii + 1][1], w_t[1]))
+            if ii < sentence.__len__()-1:
+                prev_w_cur_t.add((w_t[0], sentence[ii + 1][1]))
+                next_w_cur_t.add((sentence[ii + 1][0], w_t[1]))
+
+    # 1. unigrams:
+    feature_set += [(lambda w, t: (lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
+                    for w, t in unigrams]
+    # 2. bigrams:
+    feature_set += [(lambda w, t, pt: (lambda cntx: 1 if cntx.word == w and
+                                                         cntx.tag == t and
+                                                         cntx.prev_tag == pt else 0))(w, t, pt)
+                    for w, t, pt in bigrams]
+    # 3. trigrams:
+    feature_set += [(lambda w, t, pt, ppt: (lambda cntx: 1 if cntx.word == w and
+                                                              cntx.tag == t and
+                                                              cntx.prev_tag == pt and
+                                                              cntx.prev_prev_tag == ppt else 0))(w, t, pt, ppt)
+                    for w, t, pt, ppt in trigrams]
+    # 4. prev_word and cur_tag
+    feature_set += [(lambda pw, t: (lambda cntx: 1 if cntx.history[-1] is not None and
+                                                      cntx.history[-1][0] == pw and
+                                                      cntx.tag == t else 0))(pw, t)
+                    for pw, t in prev_w_cur_t]
+    # 5. next_word and cur_tag
+    feature_set += [(lambda nw, t: (lambda cntx: 1 if cntx.next_word == nw and cntx.tag == t else 0))(nw, t)
+                    for nw, t in next_w_cur_t]
+
 
     # Extract prefix:
     prefix = {1: {}, 2: {}, 3: {}, 4: {}}
@@ -77,9 +122,42 @@ def pre_process_data(train_set):
           '-3', selected_suffix[3].__len__(),
           '-4', selected_suffix[4].__len__(),
           ' | Total-', sum([p.__len__() for p in selected_suffix.values()]))
+    # 6. prefixes <= 4 and tag pairs in dataset
+    feature_set += [
+        (lambda pref, t: (lambda cntx: 1 if cntx.word[:pref.__len__()] == pref and cntx.tag == t else 0))(pref, t)
+        for preflist in selected_prefix.values() for pref in preflist for t in tags]
+    # 7. suffixes <= 4 and tag pairs in dataset
+    feature_set += [
+        (lambda suff, t: (lambda cntx: 1 if cntx.word[-suff.__len__():] == suff and cntx.tag == t else 0))(suff, t)
+        for sufflist in selected_suffix.values() for suff in sufflist for t in tags]
+
+    ''' Adding Ratnaparkhy features '''
+    # f100
+    feature_set += [lambda cntx: 1 if cntx.word == 'base' and cntx.tag == 'Vt' else 0]
+    # f101
+    feature_set += [lambda cntx: 1 if cntx.word[-3:] == 'ing' and cntx.tag == 'VBG' else 0]
+    # f102
+    feature_set += [lambda cntx: 1 if cntx.word[:3] == 'pre' and cntx.tag == 'NN' else 0]
+    # f103
+    feature_set += [lambda cntx: 1 if cntx.prev_prev_tag == 'DT' and
+                                      cntx.prev_tag == 'JJ' and
+                                      cntx.tag == 'Vt' else 0]
+    # f104
+    feature_set += [lambda cntx: 1 if cntx.prev_tag == 'JJ' and
+                                      cntx.tag == 'Vt' else 0]
+    # f105
+    feature_set += [lambda cntx: 1 if cntx.tag == 'Vt' else 0]
+
+    # f106
+    feature_set += [lambda cntx: 1 if cntx.history[-1] is not None and
+                                      cntx.history[-1][0] == 'the' and
+                                      cntx.tag == 'Vt' else 0]
+    # f107
+    feature_set += [lambda cntx: 1 if cntx.next_word == 'the' and
+                                      cntx.tag == 'Vt' else 0]
 
     print('preprocess finished')
-    return parsed_sentences, selected_prefix, selected_suffix
+    return parsed_sentences, feature_set
 
 class Context:
     def __init__(self, word, tag, history, prev_tag, prev_prev_tag, next_word):
@@ -96,7 +174,7 @@ class Context:
         word = sentence[index][0]
         tag = sentence[index][1]
         # TODO: add start / stop signs to history / next word?
-        history = [w for w in sentence[:index]]
+        history = sentence[:index] if index > 0 else [None]
         prev_tag = sentence[index - 1][1] if index > 0 else None
         prev_prev_tag = sentence[index - 2][1] if index > 1 else None
         next_word = sentence[index + 1][0] if len(sentence) > index + 1 else None
@@ -115,10 +193,10 @@ class Context:
 class MEMM:
     BEAM_MIN = 10
 
-    def __init__(self):
+    def __init__(self, feature_set):
         self.tags = []
-        self.enriched_tags = []
-        self.feature_set = []
+        self.enriched_tags = [] # TODO: what is the difference between self.tags and this?
+        self.feature_set = feature_set
         self.feature_set1 = []
         self.word_vectors = None
         self.sentences = None
@@ -127,40 +205,19 @@ class MEMM:
         self.word_positive_indices = None
         self.use_vector_form = False
 
-    def train_model(self, sentences, prefix=None, suffix=None, param_vec=None):
+    def train_model(self, sentences, param_vec=None):
         t_start = time.time()
         # prepare data and get statistics
         print(datetime.datetime.now(), ' - processing data')
         self.sentences = sentences
-        word_tag_pairs = []
+        self.feature_set = feature_set
         # word_number = sum([len(sentence) for sentence in sentences])
         for sentence in sentences:
             for word_tag in sentence:
-                if word_tag not in word_tag_pairs:
-                    word_tag_pairs.append(word_tag)
                 if word_tag[1] not in self.tags:
                     self.tags.append(word_tag[1])
 
         self.enriched_tags = [None] + self.tags
-
-        # define the features set:
-        # word-tag pairs in dataset
-        self.feature_set += [(lambda w, t:(lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
-                             for w, t in word_tag_pairs]
-        # prefixes <= 4 and tag pairs in dataset
-        if prefix is not None:
-            self.feature_set += [(lambda pref, t:(lambda cntx: 1 if cntx.word[:pref.__len__()] == pref and cntx.tag == t else 0))(pref, t)
-                                 for preflist in prefix.values() for pref in preflist for t in self.tags]
-        # suffixes <= 4 and tag pairs in dataset
-        if suffix is not None:
-            self.feature_set += [(lambda pref, t:(lambda cntx: 1 if cntx.word[:pref.__len__()] == pref and cntx.tag == t else 0))(suff, t)
-                                 for sufflist in suffix.values() for suff in sufflist for t in self.tags]
-        # tag trigrams in datset
-
-        # tag bigrams in datset
-        # tag unigrams in datset
-        # previous word + current tag pairs
-        # next word + current tag pairs
 
         # for each word in the corpus, find its feature vector
         word_vectors = []
@@ -419,10 +476,10 @@ def evaluate(model, testset_file, n_samples, max_words=None):
 if __name__ == "__main__":
     # load training set
     # preprocess data, extract relevant prefix/suffix etc.
-    parsed_sentences, pref, suff = pre_process_data('train.wtag')
+    parsed_sentences, feature_set = pre_process_data('train.wtag')
 
-    model = MEMM()
-    train_time = model.train_model(parsed_sentences[:1], prefix=pref, suffix=suff)
+    model = MEMM(feature_set)
+    train_time = model.train_model(parsed_sentences[:1])
     print('train: time - ', "{0:.2f}".format(train_time),'[sec]')
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(model.parameter_vector, f)
