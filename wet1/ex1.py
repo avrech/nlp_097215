@@ -43,13 +43,18 @@ class Context:
 class MEMM:
     BEAM_MIN = 10
 
-    def __init__(self, sentences):
+    def __init__(self, sentences, w2i, i2w, t2i, i2t):
         # prepare data and get statistics
         print('{} - processing data'.format(datetime.datetime.now()))
         self.sentences = sentences
+        self.w2i = w2i
+        self.i2w = i2w
+        self.t2i = t2i
+        self.i2t - i2t
         self.text_stats = self.get_text_statistics()
         self.tags = list(self.text_stats['tag_count'].keys())
         print('{} - preparing features'.format(datetime.datetime.now()))
+        self.num_features = 0
         self.feature_set = []
         self.pref_th = {1: 1000, 2: 1000, 3: 500, 4: 500}
         self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
@@ -537,6 +542,15 @@ class MEMM:
 # returns a list of sentences, each sentence is a list of (word,tag)s
 # also performs base verification of input
 def get_parsed_sentences_from_tagged_file(filename):
+    '''
+    convert words and tags to int.
+    :param      filename:
+    :return:    sentences - parsed_sentences in integer format.
+                word2int - dict
+                int2word - list
+                tag2int - dict
+                int2tag - list
+    '''
     print(f'{datetime.datetime.now()} - loading data from file {filename}')
     f_text = open(filename)
     all_words_and_tags = []
@@ -549,18 +563,43 @@ def get_parsed_sentences_from_tagged_file(filename):
     bad_words = [word for word in all_words_and_tags if len(word) != 2]
     if bad_words:
         print(f'found {len(bad_words)} bad words - {bad_words}')
-    all_tags_list = [word[1] for word in all_words_and_tags]
-    all_tags_set = set(all_tags_list)
+
+    # Generate dictionaries for word/tag - int conversion:
+    all_words_set = set([word[0] for word in all_words_and_tags])
+    word2int = dict()
+    int2word = list()
+    for idx, w in enumerate(all_words_set):
+        word2int[w] = idx
+        int2word.append(w)
+
+    all_tags_set = set([word[1] for word in all_words_and_tags])
+    tag2int = dict()
+    int2tag = list()
+    for idx, t in enumerate(all_tags_set):
+        tag2int[t] = idx
+        int2tag.append(t)
+
+    # Generate word_tag_options dicts:
+    word_tag_pairs = [[]] * len(int2word)
+    [word_tag_pairs[word2int[w_t[0]]].append(tag2int[w_t[1]]) for w_t in all_words_and_tags]
+
+    # Convert sentences to integer representation:
+    for s_idx, s in enumerate(sentences):
+        for w_idx, w_t in enumerate(s):
+            sentences[s_idx][w_idx][0] = word2int[w_t[0]]
+            sentences[s_idx][w_idx][1] = tag2int[w_t[1]]
+
+
     # tags_counter = Counter(all_tags_list)
     # all_words_list = [word[0] for word in all_words_and_tags]
     # words_counter = Counter(all_words_list)
     # all_words_set = set(all_words_list)
     print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
-    return sentences
+    return sentences, word2int, int2word, tag2int, int2tag
 
 
 def evaluate(model, testset_file, n_samples, max_words=None):
-    parsed_testset = get_parsed_sentences_from_tagged_file(testset_file)
+    parsed_testset = get_parsed_sentences_from_tagged_file(testset_file) # TODO: use trainset dictionary for test set.
     predictions = []
     accuracy = []
     for ii, sample in enumerate(parsed_testset[:n_samples]):
@@ -575,9 +614,9 @@ def evaluate(model, testset_file, n_samples, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
+    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag')
 
-    my_model = MEMM(parsed_sentences[:50])
+    my_model = MEMM(parsed_sentences[:50], w2i, i2w, t2i, i2t)
     train_time = my_model.train_model()
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
