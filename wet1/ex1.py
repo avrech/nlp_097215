@@ -387,7 +387,7 @@ class MEMM:
         bp = {}
         for word_index in range(1, len(parsed_sentence) + 1):
             context_dict = {}
-            norm_for_context = {}
+            norm_for_context_and_expmax = {}
             pi_temp = {}
             bp_temp = {}
             for tag in self.tags:
@@ -399,16 +399,16 @@ class MEMM:
                     # (otherwise we calculate it many times for different tags
                     for prev_prev_tag in self.enriched_tags:
                         if past_proba[prev_prev_tag] != 0 and\
-                                        (word_index, prev_tag, prev_prev_tag) not in norm_for_context:
+                                        (word_index, prev_tag, prev_prev_tag) not in norm_for_context_and_expmax:
                             if (prev_tag, prev_prev_tag) not in context_dict:
                                 context_dict[(prev_tag, prev_prev_tag)] = \
                                     Context.get_context_untagged(parsed_sentence, word_index - 1, tag, prev_tag,
                                                                  prev_prev_tag)
-                            norm_for_context[(word_index, prev_tag, prev_prev_tag)] = \
-                                self.get_context_norm(context_dict[(prev_tag, prev_prev_tag)])
+                            norm_for_context_and_expmax[(word_index, prev_tag, prev_prev_tag)] = \
+                                self.get_context_norm_and_expmax(context_dict[(prev_tag, prev_prev_tag)])
                     transition_proba = \
                         {prev_prev_tag: self.get_tag_proba(tag, context_dict[(prev_tag, prev_prev_tag)],
-                                                           norm=norm_for_context[(word_index, prev_tag, prev_prev_tag)])
+                                                           norm=norm_for_context_and_expmax[(word_index, prev_tag, prev_prev_tag)])
                          for prev_prev_tag in self.enriched_tags if past_proba[prev_prev_tag] != 0}
 
                     pi_candidates = [past_proba.get(prev_prev_tag, 0) * transition_proba.get(prev_prev_tag, 0)
@@ -440,7 +440,8 @@ class MEMM:
             index, tn_prev, tn, proba = [x for x in sorted_pi if x[0] == word_index and x[2] == result_tags[0]][0]
             result_tags = [tn_prev] + result_tags
         infer_time = time.time() - t_start
-        return result_tags, infer_time
+        result_tags_str = [self.i2t[i] for i in result_tags]
+        return result_tags_str, infer_time
 
     def get_feature_vector_for_context(self, context):
         vector = [feature(context) for feature in self.feature_set]
@@ -467,23 +468,25 @@ class MEMM:
     def get_dot_product_from_positive_features(positive_indices, v):
         return np.sum(np.take(v, positive_indices))
 
-    # softmax
+    # safe-softmax
     def get_tag_proba(self, tag, context, norm=None):
         context.tag = tag
-        tag_vector = self.get_feature_vector_for_context(context)
-        numerator = np.exp(self.get_dot_product(tag_vector))
+        tag_vector = self.get_positive_features_for_context(context)
         if norm is None:
-            norm = self.get_context_norm(context)
-        proba = numerator / norm if norm > 0 else 0
+            norm = self.get_context_norm_and_expmax(context)
+        numerator = np.exp(self.get_dot_product(tag_vector)-norm[1])
+        proba = numerator / norm[0] if norm[0] > 0 else 0
         return proba
 
-    def get_context_norm(self, context):
-        norm = 0
+    def get_context_norm_and_expmax(self, context):
+        dot_products = []
         for curr_tag in self.tags:
             context.tag = curr_tag
-            tag_vector = self.get_feature_vector_for_context(context)
-            norm += np.exp(self.get_dot_product(tag_vector))
-        return norm
+            tag_vector = self.get_positive_features_for_context(context)
+            dot_products.append(self.get_dot_product(tag_vector))
+        expmax = max(dot_products)
+        norm = sum(np.exp(np.array(dot_products)-expmax))
+        return norm, expmax
 
     def log(self, msg):
         if self.verbose:
@@ -670,7 +673,7 @@ def parse_test_set(filename, n=None):
         sentences.append(words_and_tags)
     return sentences
 
-def evaluate(model, testset_file, word2int, tag2int, n_samples, max_words=None):
+def evaluate(model, testset_file, n_samples=1, max_words=None):
     parsed_testset = parse_test_set(testset_file, n=n_samples) # TODO: use trainset dictionary for test set.
     predictions = []
     accuracy = []
@@ -687,7 +690,7 @@ def evaluate(model, testset_file, word2int, tag2int, n_samples, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag', n=20)
+    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag', n=100)
 
     my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t, wtp)
     train_time = my_model.train_model()
@@ -700,7 +703,7 @@ if __name__ == "__main__":
 
 
 
-    evaluate(my_model, 'train.wtag', w2i, t2i, 1, 5)
+    evaluate(my_model, 'train.wtag', n_samples=1, max_words=5)
 
     # Evaluate test set:
     evaluate(my_model, 'test.wtag', 1, 5)
