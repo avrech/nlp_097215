@@ -199,14 +199,18 @@ class MEMM:
         self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
 
         self.pref_offset = self.trigram_offset + len(tag_trigrams_counts.keys())
-        for pref_idx, (p_t, count) in enumerate(prefix_tag_counter.items()):
+        pref_idx = 0
+        for (p_t, count) in prefix_tag_counter.items():
             if count > self.pref_th[len(p_t[0])]:
                 selected_prefix_tag_pairs[p_t] = pref_idx + self.pref_offset
+                pref_idx += 1
 
         self.suff_offset = self.pref_offset + len(selected_prefix_tag_pairs.keys())
-        for suff_idx, (s_t, count) in enumerate(suffix_tag_counter.items()):
+        suff_idx = 0
+        for (s_t, count) in suffix_tag_counter.items():
             if count > self.suff_th[len(s_t[0])]:
-                selected_prefix_tag_pairs[s_t] = suff_idx + self.suff_offset
+                selected_suffix_tag_pairs[s_t] = suff_idx + self.suff_offset
+                suff_idx += 1
 
         self.feature_set1_offset = self.suff_offset + len(selected_suffix_tag_pairs.keys())
 
@@ -690,7 +694,7 @@ def evaluate(model, testset_file, n_samples=1, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag', n=100)
+    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag')
 
     my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t, wtp)
     train_time = my_model.train_model()
@@ -703,7 +707,7 @@ if __name__ == "__main__":
 
 
 
-    evaluate(my_model, 'train.wtag', n_samples=1, max_words=5)
+    evaluate(my_model, 'train.wtag', max_words=100)
 
     # Evaluate test set:
     evaluate(my_model, 'test.wtag', 1, 5)
