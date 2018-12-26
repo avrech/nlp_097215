@@ -339,25 +339,16 @@ class MEMM:
         t_start = time.time()
         # for each word in the corpus, find its feature vector
         word_vectors = []
-        word_positive_indices = list()
+        word_positive_indices = list() # a list of the features of each senence in the corpus.
         for s_idx, sentence in enumerate(self.sentences):
             positive_indices = list() # a list of the positive features of each word in the current sentence.
             for w_idx in range(len(sentence)):
                 context = Context.get_context_tagged(sentence, w_idx)
-                if self.use_vector_form:
-                    vector = self.get_feature_vector_for_context(context)
-                    word_vectors.append(vector)
-                else:
-                    positive_indices.append(self.get_positive_features_for_context(context))
-            if not self.use_vector_form:
-                word_positive_indices.append(positive_indices) # a list of the features of each sentence.
+                positive_indices.append(self.get_positive_features_for_context(context))
+            word_positive_indices.append(positive_indices) # a list of the features of each sentence.
 
-        if self.use_vector_form:
-            self.word_vectors = np.array(word_vectors)
-            self.empirical_counts = np.sum(self.word_vectors, axis=0)
-        else:
-            self.word_positive_indices = word_positive_indices
-            self.empirical_counts = self.get_empirical_counts_from_dict()
+        self.word_positive_indices = word_positive_indices # wpi[s_idx][w_idx] is the positive features of a word in a sentence
+        self.empirical_counts = self.get_empirical_counts_from_dict()
 
         # calculate the parameters vector
         print('{} - finding parameter vector'.format(datetime.datetime.now()))
@@ -369,6 +360,7 @@ class MEMM:
             else:
                 param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
                                                     jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
+
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
         print('{} - model train complete'.format(datetime.datetime.now()))
@@ -488,100 +480,64 @@ class MEMM:
     # the ML estimate maximization function
     def l(self, v):
         print('optimizer iter no.', self.l_counter)
-        # proba part
+        # proba part, the linear term in l(v)
         proba = 0
-        # normalization part
+        # normalization part, i.e. sum_on_x(i){ log( sum_on_y'[exp(v*f(x(i),y'] ) }
         norm_part = 0
         for s_idx, sentence in enumerate(self.sentences):
             for w_idx in range(len(sentence)):
-                proba += self.get_dot_product_from_positive_features(self.word_positive_indices[s_idx][w_idx], v)
                 curr_context = Context.get_context_tagged(sentence, w_idx)
                 curr_exp = 0
-                if False:  # self.safe_softmax:
-                    dot_products = []
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        # vector = self.get_feature_vector_for_context(curr_context)
-                        positive_features = self.get_positive_features_for_context(curr_context)
-                        dot_products.append(self.get_dot_product_from_positive_features(positive_features, v))
-                    dot_products = np.array(dot_products) - max(dot_products)
-                    for val in dot_products:
-                        curr_exp += 2 ** val
-                else:
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        # vector = self.get_feature_vector_for_context(curr_context)
-                        positive_features = self.get_positive_features_for_context(curr_context)
-                        curr_exp += 2 ** self.get_dot_product_from_positive_features(positive_features, v)
-                norm_part += math.log(curr_exp, 2)
-        res = proba - norm_part
-        self.log(f'l = {self.l_counter},{res}')
-        self.l_counter += 1
-        return -res
-
-    # the ML estimate maximization function
-    def l_vector(self, v):
-        # proba part
-        proba = sum(np.dot(self.word_vectors, v))
-        # normalization part
-        norm_part = 0
-        for sentence in self.sentences:
-            for i in range(len(sentence)):
-                curr_context = Context.get_context_tagged(sentence, i)
-                curr_exp = 0
+                # if True:  # self.safe_softmax:
+                dot_products = []
                 for tag in self.tags:
                     curr_context.tag = tag
-                    vector = self.get_feature_vector_for_context(curr_context)
-                    curr_exp += 2 ** np.dot(v, vector)
-                norm_part += math.log(curr_exp, 2)
+                    positive_features = self.get_positive_features_for_context(curr_context)
+                    dot_products.append(self.get_dot_product_from_positive_features(positive_features, v))
+                safety_term = max(dot_products)
+                exponents = np.exp(np.array(dot_products) - safety_term)
+                p = self.get_dot_product_from_positive_features(self.word_positive_indices[s_idx][w_idx], v) - safety_term
+                proba += p
+                norm_part += np.log(sum(exponents))
         res = proba - norm_part
         self.log(f'l = {self.l_counter},{res}')
         self.l_counter += 1
+        # return minus res because the optimizer does not know to maximize,
+        # so we minimize (-l(v))
         return -res
 
     def grad_l(self, v):
         # expected counts
-        expected_counts = 0
+        expected_counts = np.zeros(v.shape)
         for s_idx, sentence in enumerate(self.sentences):
             for w_idx in range(len(sentence)):
                 curr_context = Context.get_context_tagged(sentence, w_idx)
-                # curr_feature = self.get_positive_features_for_context(curr_context) # for the expected counts
+                f_xi_for_all_ytag = []       # the features f(x(i),y') for y' in Y
+                dot_products = []  # f(x(i),y') @ v for y' in Y
+                # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
+                for tag in self.tags:
+                    curr_context.tag = tag
+                    f_xi_ytag = self.get_positive_features_for_context(curr_context)
+                    f_xi_for_all_ytag.append(f_xi_ytag)
+                    dot_products.append(self.get_dot_product_from_positive_features(f_xi_ytag, v))
+                dot_products = np.array(dot_products) - max(dot_products) # make the exponent safe.
 
-                normalization = 0
-                nominator = 0
-                if self.safe_softmax:
-                    dot_products = []
-                    vectors = []
-                    # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        vector = self.get_positive_features_for_context(curr_context)
-                        vectors.append(vector)
-                        curr_positive_features = self.word_positive_indices[s_idx][w_idx]
-                        dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
-                    dot_products = np.array(dot_products) - max(dot_products)
+                exponents = np.exp2(dot_products)
+                softmax_denominator = sum(exponents)
+                softmax_xi_ytag = exponents / softmax_denominator
 
-                    # for j, product in enumerate(dot_products):
-                    #     curr_exp = 2 ** product
-                    #     normalization += curr_exp
-                    #     nominator += np.multiply(vectors[j], curr_exp)
-                    curr_exp = np.exp2(dot_products)
-                    normalization += curr_exp
-                    nominator += self.get_dot_product_from_positive_features(vectors, curr_exp)
-                else:
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        vector = self.get_positive_features_for_context(curr_context)
-                        curr_positive_features = self.word_positive_indices[s_idx][w_idx]
-                        curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
-                        normalization += curr_exp
-                        nominator += np.multiply(vector, curr_exp)
+                # the nominator cannot be explicitely computed in positive feature representation.
+                # the update is element-wise:
+                if softmax_denominator > 0:
+                    for tag, pos_f in enumerate(f_xi_for_all_ytag):
+                        for v_idx in pos_f:
+                            expected_counts[v_idx] -= softmax_xi_ytag[tag]
 
-                expected_counts += nominator / normalization if normalization > 0 else 0
+
         res = self.empirical_counts - expected_counts
         self.log(f'grad = {self.l_grad_counter}')
         self.l_grad_counter += 1
-        return -res
+        return -res # we return minus res because the optimizer knows only to minimize (-l(v))
 
     def grad_l_vector(self, v):
         self.log(f'grad = {self.l_grad_counter}')
