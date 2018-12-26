@@ -135,17 +135,12 @@ class MEMM:
                 self.safe_add(tag_unigrams_counts, tag)
                 self.safe_add(word_tag_counts, word_tag)
                 # self.safe_add(word_bigrams_counts, (prev_word, word))
-                self.safe_add(tag_bigrams_counts, (prev_tag, tag))
+                if i > 0:
+                    self.safe_add(tag_bigrams_counts, (prev_tag, tag))
                 # self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
-                self.safe_add(tag_trigrams_counts, (prev_prev_tag, prev_tag, tag))
+                if i > 1:
+                    self.safe_add(tag_trigrams_counts, (prev_prev_tag, prev_tag, tag))
 
-                self.trigram_offset = self.bigram_offset + len(tag_bigrams_counts.keys())
-                # set the bigrams features indices in the feature vector:
-                for bigram_idx, (pt, t) in enumerate(tag_bigrams_counts.keys()):
-                    tagrams[t][1][pt] = [bigram_idx + self.bigram_offset, {}]
-                # set the trigrams features indices in the feature vector:
-                for trigram_idx, (ppt, pt, t) in enumerate(tag_trigrams_counts.keys()):
-                    tagrams[t][1][pt][1][ppt] = trigram_idx + self.trigram_offset
 
                 # convert word to string to process charachter features:
                 word = self.i2w[word]
@@ -180,23 +175,32 @@ class MEMM:
                 if i < len(sentence)-1:
                     self.safe_add(next_word_cur_tag, (sentence[i + 1][0], tag))
 
-                ''' Filter prefix and suffix'''
-                self.pref_th = {1: 1000, 2: 500, 3: 100, 4: 100}
-                self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
 
-                self.pref_offset = self.trigram_offset + len(tag_trigrams_counts.keys())
-                for pref_idx, (p_t, count) in enumerate(prefix_tag_counter.items()):
-                    if count > self.pref_th[len(p_t[0])]:
-                        selected_prefix_tag_pairs[p_t] = pref_idx + self.pref_offset
-
-                self.suff_offset = self.pref_offset + len(selected_prefix_tag_pairs.keys())
-                for suff_idx, (s_t, count) in enumerate(suffix_tag_counter.items()):
-                    if count > self.suff_th[len(s_t[0])]:
-                        selected_prefix_tag_pairs[s_t] = suff_idx + self.suff_offset
-
-                self.feature_set1_offset = self.suff_offset + len(selected_suffix_tag_pairs.keys())
+        self.trigram_offset = self.bigram_offset + len(tag_bigrams_counts.keys())
+        # set the bigrams features indices in the feature vector:
+        for bigram_idx, (pt, t) in enumerate(tag_bigrams_counts.keys()):
+            tagrams[t][1][pt] = [bigram_idx + self.bigram_offset, {}]
+        # set the trigrams features indices in the feature vector:
+        for trigram_idx, (ppt, pt, t) in enumerate(tag_trigrams_counts.keys()):
+            tagrams[t][1][pt][1][ppt] = trigram_idx + self.trigram_offset
 
         self.tagrams = tagrams
+        ''' Filter prefix and suffix'''
+        self.pref_th = {1: 1000, 2: 500, 3: 100, 4: 100}
+        self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
+
+        self.pref_offset = self.trigram_offset + len(tag_trigrams_counts.keys())
+        for pref_idx, (p_t, count) in enumerate(prefix_tag_counter.items()):
+            if count > self.pref_th[len(p_t[0])]:
+                selected_prefix_tag_pairs[p_t] = pref_idx + self.pref_offset
+
+        self.suff_offset = self.pref_offset + len(selected_prefix_tag_pairs.keys())
+        for suff_idx, (s_t, count) in enumerate(suffix_tag_counter.items()):
+            if count > self.suff_th[len(s_t[0])]:
+                selected_prefix_tag_pairs[s_t] = suff_idx + self.suff_offset
+
+        self.feature_set1_offset = self.suff_offset + len(selected_suffix_tag_pairs.keys())
+
         return {'word_count': word_unigrams_counts,
                 'tag_count': tag_unigrams_counts,
                 'word_tag_pairs': word_tag_counts,
@@ -222,7 +226,8 @@ class MEMM:
         # define the features set
         # tag-word pairs in dataset (#100) ~15K
         def set_wtp_feature(cntx, pos_features):
-            return pos_features.append(self.wtp[cntx.word][cntx.tag])
+            pos_features.append(self.wtp[cntx.word][cntx.tag])
+            return pos_features
         self.feature_set += [set_wtp_feature]
 
         # self.feature_set += [(lambda w, t: (lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
@@ -264,11 +269,12 @@ class MEMM:
             pos_bigram  = self.tagrams[cntx.tag][1].get(cntx.prev_tag)
             if pos_bigram is None:
                 return pos_features
-            pos_features.append(pos_bigram)
-            pos_trigram = self.tagrams[cntx.tag][1].get(cntx.prev_tag).get(cntx.prev_prev_tag)
+            pos_features.append(pos_bigram[0])
+            pos_trigram = self.tagrams[cntx.tag][1].get(cntx.prev_tag)[1].get(cntx.prev_prev_tag)
             if pos_trigram is None:
                 return pos_features
-            return pos_features.append(pos_trigram)
+            pos_features.append(pos_trigram)
+            return pos_features
         self.feature_set += [set_tagrams_features]
 
 
@@ -287,14 +293,14 @@ class MEMM:
 
 
         # capital first letter tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if self.i2w[cntx.word][0].isupper() and cntx.tag == t else 0))(t)
                              for t in self.text_stats['capital_first_letter_tag'].keys()]
         # capital word tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in cntx.word])
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in self.i2w[cntx.word]])
                                                            and cntx.tag == t else 0))(t)
                              for t in self.text_stats['capital_word_tag'].keys()]
         # number tag feature
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.word.replace('.', '', 1).isdigit()
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if self.i2w[cntx.word].replace('.', '', 1).isdigit()
                                                            and cntx.tag == t else 0))(t)
                              for t in self.text_stats['number_tag'].keys()]
 
@@ -303,11 +309,11 @@ class MEMM:
                              for t in self.text_stats['first_word_tag'].keys()]
 
         # second word in sentence tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 1 and cntx.tag == t else 0))(t)
                              for t in self.text_stats['second_word_tag'].keys()]
 
         # last word in sentence tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.next_word is None and cntx.tag == t else 0))(t)
                              for t in self.text_stats['last_word_tag'].keys()]
 
         def set_all_other_features(cntx, pos_features):
@@ -325,7 +331,7 @@ class MEMM:
         #                                                        cntx.history[-1][0] == nw and
         #                                                        cntx.tag == t else 0))(nw, t)
         #                      for (nw, t) in self.text_stats['prev_word_cur_tag'].keys()]
-
+        self.num_features = self.feature_set1_offset + len(self.feature_set1)
         return self.feature_set, self.tags
 
     def train_model(self, param_vec=None):
@@ -357,11 +363,11 @@ class MEMM:
         print('{} - finding parameter vector'.format(datetime.datetime.now()))
         if param_vec is None:
             if self.use_vector_form:
-                param_vec = scipy.optimize.minimize(fun=self.l_vector, x0=np.ones(len(self.feature_set)),
+                param_vec = scipy.optimize.minimize(fun=self.l_vector, x0=np.ones(self.num_features),
                                                     method='L-BFGS-B', jac=self.grad_l_vector,
                                                     options={'maxiter': 17, 'maxfun': 20})
             else:
-                param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
+                param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
                                                     jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
@@ -443,7 +449,7 @@ class MEMM:
         return np.array(pos_features)
 
     def get_empirical_counts_from_dict(self):
-        emprical_counts = np.zeros(len(self.feature_set))
+        emprical_counts = np.zeros(self.num_features)
         for positive_features in self.word_positive_indices:
             for positive_indices in positive_features:
                 emprical_counts[positive_indices] += 1
@@ -539,6 +545,8 @@ class MEMM:
         for s_idx, sentence in enumerate(self.sentences):
             for w_idx in range(len(sentence)):
                 curr_context = Context.get_context_tagged(sentence, w_idx)
+                # curr_feature = self.get_positive_features_for_context(curr_context) # for the expected counts
+
                 normalization = 0
                 nominator = 0
                 if self.safe_softmax:
@@ -547,19 +555,23 @@ class MEMM:
                     # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
                     for tag in self.tags:
                         curr_context.tag = tag
-                        vector = self.get_feature_vector_for_context(curr_context)
+                        vector = self.get_positive_features_for_context(curr_context)
                         vectors.append(vector)
                         curr_positive_features = self.word_positive_indices[s_idx][w_idx]
                         dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
                     dot_products = np.array(dot_products) - max(dot_products)
-                    for j, product in enumerate(dot_products):
-                        curr_exp = 2 ** product
-                        normalization += curr_exp
-                        nominator += np.multiply(vectors[j], curr_exp)
+
+                    # for j, product in enumerate(dot_products):
+                    #     curr_exp = 2 ** product
+                    #     normalization += curr_exp
+                    #     nominator += np.multiply(vectors[j], curr_exp)
+                    curr_exp = np.exp2(dot_products)
+                    normalization += curr_exp
+                    nominator += self.get_dot_product_from_positive_features(vectors, curr_exp)
                 else:
                     for tag in self.tags:
                         curr_context.tag = tag
-                        vector = self.get_feature_vector_for_context(curr_context)
+                        vector = self.get_positive_features_for_context(curr_context)
                         curr_positive_features = self.word_positive_indices[s_idx][w_idx]
                         curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
                         normalization += curr_exp
@@ -716,7 +728,7 @@ def evaluate(model, testset_file, word2int, tag2int, n_samples, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag', n=1000)
+    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag', n=20)
 
     my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t, wtp)
     train_time = my_model.train_model()
