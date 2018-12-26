@@ -100,6 +100,7 @@ class MEMM:
         self.safe_softmax = True
 
         self.get_features()
+        self.training_features = [None] * len(self.sentences)
 
     @staticmethod
     def safe_add(curr_dict, key):
@@ -312,9 +313,6 @@ class MEMM:
             return pos_features
         self.feature_set += [set_wtp_feature]
 
-        # self.feature_set += [(lambda w, t: (lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
-        #                      for w, t in self.text_stats['word_tag_pairs'].keys()]
-
         # suffixes <= 4 and tag pairs in dataset (#101)
         def set_suffix_tag_features(cntx, pos_features):
             word = self.i2w[cntx.word]
@@ -325,10 +323,6 @@ class MEMM:
                     pos_features.append(pos)
             return pos_features
         self.feature_set += [set_suffix_tag_features]
-
-        # self.feature_set += [(lambda suff, t: (lambda cntx: 1 if cntx.word.endswith(suff) and
-        #                                                          cntx.tag == t else 0))(suff, t)
-        #                      for suff, t in self.text_stats['selected_suffix_tag_pairs']]
 
         # prefixes <= 4 and tag pairs in dataset (#102)
         def set_prefix_tag_features(cntx, pos_features):
@@ -342,10 +336,6 @@ class MEMM:
 
         self.feature_set += [set_prefix_tag_features]
 
-        # self.feature_set += [(lambda pref, t: (lambda cntx: 1 if cntx.word.startswith(pref) and
-        #                                                          cntx.tag == t else 0))(pref, t)
-        #                      for pref, t in self.text_stats['selected_prefix_tag_pairs']]
-
         def set_tagrams_features(cntx, pos_features):
             pos_features.append(self.tagrams[cntx.tag][0]) # unigram feature, always exists.
             pos_bigram  = self.tagrams[cntx.tag][1].get(cntx.prev_tag)
@@ -358,20 +348,6 @@ class MEMM:
             pos_features.append(pos_trigram)
             return pos_features
         self.feature_set += [set_tagrams_features]
-
-
-        # # tag trigrams in datset (#103) ~8K
-        # self.feature_set += [(lambda prev_prev_tag, prev_tag, tag:
-        #                       (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag
-        #                                          and cntx.prev_prev_tag == prev_prev_tag else 0))
-        #                      (prev_prev_tag, prev_tag, tag)
-        #                      for prev_prev_tag, prev_tag, tag in self.text_stats['tag_trigrams'].keys()]
-        # # tag bigrams in datset (#104) <1K
-        # self.feature_set += [(lambda prev_tag, tag:
-        #                       (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag else 0))(prev_tag, tag)
-        #                      for prev_tag, tag in self.text_stats['tag_bigrams'].keys()]
-        # # tag unigrams in datset (#105)
-        # self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
 
         # set first capital letter feature:
         def set_cflt_features(cntx, pos_features):
@@ -441,7 +417,21 @@ class MEMM:
         self.num_features = self.lwt_offset + len(self.text_stats['lwt'].keys())
         return self.feature_set, self.tags
 
+    def calc_pos_features_for_training(self):
+        for s_idx, sentence in enumerate(self.sentences):
+            sentence_f = [None] * len(sentence)
+            for w_idx in range(len(sentence)):
+                word_f = [None] * self.tags.__len__()
+                curr_context = Context.get_context_tagged(sentence, w_idx)
+                for tag in self.tags:
+                    curr_context.tag = tag
+                    word_f[tag] = self.get_positive_features_for_context(curr_context)
+                sentence_f[w_idx] = word_f
+            self.training_features[s_idx] = sentence_f
+
     def train_model(self, param_vec=None):
+        print('Pre-processing - calculate features for training corpus...')
+        self.calc_pos_features_for_training()
         print('{} - start training'.format(datetime.datetime.now()))
         t_start = time.time()
         # for each word in the corpus, find its feature vector
@@ -461,7 +451,13 @@ class MEMM:
         print('{} - finding parameter vector'.format(datetime.datetime.now()))
         if param_vec is None:
             param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
-                                                jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20, 'maxcor': 10, 'disp': True})
+                                                jac=self.grad_l,
+                                                options={'maxiter': 17,
+                                                         'maxls' : 10, # default 20
+                                                         'ftol'  : 0.05,
+                                                         'maxfun': 20,
+                                                         'maxcor': 10,
+                                                         'disp': True})
 
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
@@ -599,14 +595,14 @@ class MEMM:
         norm_part = 0
         for s_idx, sentence in enumerate(self.sentences):
             for w_idx in range(len(sentence)):
-                curr_context = Context.get_context_tagged(sentence, w_idx)
-                curr_exp = 0
-                # if True:  # self.safe_softmax:
+                # curr_context = Context.get_context_tagged(sentence, w_idx)
                 dot_products = []
                 for tag in self.tags:
-                    curr_context.tag = tag
-                    positive_features = self.get_positive_features_for_context(curr_context)
-                    dot_products.append(self.get_dot_product_from_positive_features(positive_features, v))
+                    # curr_context.tag = tag
+                    # positive_features = self.get_positive_features_for_context(curr_context)
+                    pf = self.training_features[s_idx][w_idx][tag]
+                    dot_products.append(self.get_dot_product_from_positive_features(pf, v))
+
                 safety_term = max(dot_products)
                 exponents = np.exp(np.array(dot_products) - safety_term)
                 p = self.get_dot_product_from_positive_features(self.word_positive_indices[s_idx][w_idx], v) - safety_term
@@ -616,24 +612,29 @@ class MEMM:
 
         self.log(f'l = {self.l_counter},{res}')
         self.l_counter += 1
+
         # return minus res because the optimizer does not know to maximize,
         # so we minimize (-l(v))
         return -res
 
     def grad_l(self, v):
+        self.log(f'grad = {self.l_grad_counter}')
+        self.l_grad_counter += 1
         # expected counts
         expected_counts = np.zeros(v.shape)
         for s_idx, sentence in enumerate(self.sentences):
             for w_idx in range(len(sentence)):
-                curr_context = Context.get_context_tagged(sentence, w_idx)
-                f_xi_for_all_ytag = []       # the features f(x(i),y') for y' in Y
+                # curr_context = Context.get_context_tagged(sentence, w_idx)
+                # f_xi_for_all_ytag = self.training_features[s_idx][w_idx] # the features f(x(i),y') for y' in Y
                 dot_products = []  # f(x(i),y') @ v for y' in Y
                 # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
-                for tag in self.tags:
-                    curr_context.tag = tag
-                    f_xi_ytag = self.get_positive_features_for_context(curr_context)
-                    f_xi_for_all_ytag.append(f_xi_ytag)
-                    dot_products.append(self.get_dot_product_from_positive_features(f_xi_ytag, v))
+                # for tag in self.tags:
+                    # curr_context.tag = tag
+                    # pf = f_xi_for_all_ytag[tag] #self.get_positive_features_for_context(curr_context)
+                    # f_xi_for_all_ytag.append(f_xi_ytag)
+                pf_per_tag = self.training_features[s_idx][w_idx]
+                for pf in pf_per_tag:
+                    dot_products.append(self.get_dot_product_from_positive_features(pf, v))
                 dot_products = np.array(dot_products) - max(dot_products) # make the exponent safe.
 
                 exponents = np.exp2(dot_products)
@@ -643,14 +644,12 @@ class MEMM:
                 # the nominator cannot be explicitely computed in positive feature representation.
                 # the update is element-wise:
                 if softmax_denominator > 0:
-                    for tag, pos_f in enumerate(f_xi_for_all_ytag):
+                    for tag, pos_f in enumerate(pf_per_tag):
                         for v_idx in pos_f:
                             expected_counts[v_idx] -= softmax_xi_ytag[tag]
 
 
         res = self.empirical_counts - expected_counts - self.l2 * v # regularization l2
-        self.log(f'grad = {self.l_grad_counter}')
-        self.l_grad_counter += 1
         return -res # we return minus res because the optimizer knows only to minimize (-l(v))
 
 
