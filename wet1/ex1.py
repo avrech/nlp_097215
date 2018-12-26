@@ -44,6 +44,15 @@ class MEMM:
     BEAM_MIN = 10
 
     def __init__(self, sentences, w2i, i2w, t2i, i2t, wtp):
+        '''
+
+        :param sentences: The whole corpus in integer representation.
+        :param w2i: word2int function. maps all strings which contains numbers to 1.
+        :param i2w: list int2word
+        :param t2i: dict of all possible tags.
+        :param i2t: list int2tag
+        :param wtp: word-tag-pairs dictionaries.
+        '''
         # prepare data and get statistics
         print('{} - processing data'.format(datetime.datetime.now()))
         self.sentences = sentences # integer representation
@@ -300,7 +309,7 @@ class MEMM:
                                                            and cntx.tag == t else 0))(t)
                              for t in self.text_stats['capital_word_tag'].keys()]
         # number tag feature
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if self.i2w[cntx.word].replace('.', '', 1).isdigit()
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if self.i2w[cntx.word].replace('.', '', 1).isdigit() # why 1?
                                                            and cntx.tag == t else 0))(t)
                              for t in self.text_stats['number_tag'].keys()]
 
@@ -353,13 +362,8 @@ class MEMM:
         # calculate the parameters vector
         print('{} - finding parameter vector'.format(datetime.datetime.now()))
         if param_vec is None:
-            if self.use_vector_form:
-                param_vec = scipy.optimize.minimize(fun=self.l_vector, x0=np.ones(self.num_features),
-                                                    method='L-BFGS-B', jac=self.grad_l_vector,
-                                                    options={'maxiter': 17, 'maxfun': 20})
-            else:
-                param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
-                                                    jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
+            param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
+                                                jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
 
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
@@ -368,9 +372,17 @@ class MEMM:
 
     # use Viterbi to infer tags for the target sentence
     def infer(self, sentence):
+        '''
+        Parse the input, convert words to integers (treat all numbers as 1).
+        Infer the probable tags.
+        TODO: how to treat UNKNOWN WORDS?
+        :param sentence: string of words, separated by space chars. example: 'The dog barks'
+        :return: a list of corresponding tags - for example: [DT, NN, Vt]
+        '''
         print(f'{datetime.datetime.now()} - predict for {sentence}')
         t_start = time.time()
-        parsed_sentence = [word.rstrip() for word in sentence.split(' ')]
+        parsed_sentence_str = [word.rstrip() for word in sentence.split(' ')]
+        parsed_sentence = [self.w2i(w) for w in parsed_sentence_str]
         pi = {(0, None, None): 1}
         bp = {}
         for word_index in range(1, len(parsed_sentence) + 1):
@@ -448,7 +460,7 @@ class MEMM:
         return emprical_counts
 
     def get_dot_product(self, feature_vector):
-        dot_product = sum([feature_vector[i] * self.parameter_vector[i] for i in range(len(feature_vector))])
+        dot_product = np.sum(np.take(self.parameter_vector,feature_vector))
         return dot_product
 
     @staticmethod
@@ -459,7 +471,7 @@ class MEMM:
     def get_tag_proba(self, tag, context, norm=None):
         context.tag = tag
         tag_vector = self.get_feature_vector_for_context(context)
-        numerator = 2 ** self.get_dot_product(tag_vector)
+        numerator = np.exp(self.get_dot_product(tag_vector))
         if norm is None:
             norm = self.get_context_norm(context)
         proba = numerator / norm if norm > 0 else 0
@@ -470,7 +482,7 @@ class MEMM:
         for curr_tag in self.tags:
             context.tag = curr_tag
             tag_vector = self.get_feature_vector_for_context(context)
-            norm += 2 ** self.get_dot_product(tag_vector)
+            norm += np.exp(self.get_dot_product(tag_vector))
         return norm
 
     def log(self, msg):
@@ -539,32 +551,24 @@ class MEMM:
         self.l_grad_counter += 1
         return -res # we return minus res because the optimizer knows only to minimize (-l(v))
 
-    def grad_l_vector(self, v):
-        self.log(f'grad = {self.l_grad_counter}')
-        self.l_grad_counter += 1
-        # expected counts
-        expected_counts = 0
-        for sentence in self.sentences:
-            for i in range(len(sentence)):
-                curr_context = Context.get_context_tagged(sentence, i)
-                normalization = 0
-                nominator = 0
-                for tag in self.tags:
-                    curr_context.tag = tag
-                    vector = self.get_feature_vector_for_context(curr_context)
-                    curr_exp = 2 ** np.dot(v, vector)
-                    normalization += curr_exp
-                    nominator += np.multiply(vector, curr_exp)
-
-                expected_counts += nominator / normalization if normalization > 0 else 0
-        res = self.empirical_counts - expected_counts
-        self.log(f'grad = {self.l_grad_counter}')
-        self.l_grad_counter += 1
-        return -res
 
     def test(self, text, annotated=False):
         pass
 
+def is_number(word):
+    '''
+    consider any string which contains digits as a number.
+    TODO: maybe only the chars: 0 1 2 3 4 5 6 7 8 9 0 , . - + e ?
+    :param word: string - example "400,000", "3.1", "1e-10"
+    :return: true/ false
+    '''
+    for char in word:
+        if char.isdigit():
+            return 1
+    return 0
+
+def num2one(word):
+    return "1" if is_number(word) else word
 
 # receives input file (of tagged sentences),
 # returns a list of sentences, each sentence is a list of (word,tag)s
@@ -598,7 +602,8 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
     sentences = []
     for row in f_text:
         tagged_words = [word.rstrip() for word in row.split(' ')]
-        words_and_tags = tuple([tuple(tagged_word.split('_')) for tagged_word in tagged_words])
+        # TODO: here I replace all words which contain digits to '1'. is it good?
+        words_and_tags = tuple([tuple([num2one(tagged_word.split('_')[0]),tagged_word.split('_')[1]]) for tagged_word in tagged_words])
         sentences.append(words_and_tags)
         all_words_and_tags += words_and_tags
     bad_words = [word for word in all_words_and_tags if len(word) != 2]
@@ -628,10 +633,10 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
     #         sentences[s_idx][w_idx][1] = tag2int[w_t[1]]
 
     all_words_and_tags_int = []
-    # with open(filename) as f_text:
+    w2i = lambda w: word2int.get(num2one(w), -1)
     for row in f_text:
         tagged_words = [word.rstrip() for word in row.split(' ')]
-        words_and_tags_int = tuple([(word2int[tagged_word.split('_')[0]], tag2int[tagged_word.split('_')[1]] )
+        words_and_tags_int = tuple([(w2i(tagged_word.split('_')[0]), tag2int[tagged_word.split('_')[1]])
                                     for tagged_word in tagged_words])
         sentences_int.append(words_and_tags_int)
         all_words_and_tags_int += words_and_tags_int
@@ -641,15 +646,16 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
     # words_counter = Counter(all_words_list)
     # all_words_set = set(all_words_list)
     print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
-    return sentences_int, word2int, int2word, tag2int, int2tag, word_tag_pairs
 
-def parse_test_set(filename, word2int, tag2int, n=None):
+    return sentences_int, w2i, int2word, tag2int, int2tag, word_tag_pairs
+
+def parse_test_set(filename, n=None):
     '''
     parse input file to sentences. convert words and tags to int according to the training corpus.
     :param      filename:
     :return:    sentences - parsed_sentences in integer format.
     '''
-    sentences_int = []
+    sentences = []
     f_text = None
     print(f'{datetime.datetime.now()} - loading data from file {filename}')
     with open(filename) as f:
@@ -660,20 +666,17 @@ def parse_test_set(filename, word2int, tag2int, n=None):
 
     for row in f_text:
         tagged_words = [word.rstrip() for word in row.split(' ')]
-        # convert strings to integer. if a key has never been seen in corpus, set default value - 7.
-        # TODO: treat numbers!!!
-        words_and_tags_int = tuple([(word2int.get(tagged_word.split('_')[0],7), tag2int.get(tagged_word.split('_')[1],7) )
-                                    for tagged_word in tagged_words])
-        sentences_int.append(words_and_tags_int)
-
-    return sentences_int
+        words_and_tags = tuple([(tagged_word.split('_')) for tagged_word in tagged_words])
+        sentences.append(words_and_tags)
+    return sentences
 
 def evaluate(model, testset_file, word2int, tag2int, n_samples, max_words=None):
-    parsed_testset = parse_test_set(testset_file, word2int, tag2int, n=n_samples) # TODO: use trainset dictionary for test set.
+    parsed_testset = parse_test_set(testset_file, n=n_samples) # TODO: use trainset dictionary for test set.
     predictions = []
     accuracy = []
-    for ii, sample in enumerate(parsed_testset):
-        sentence = ' '.join([word[0] for word in sample[:max_words]])
+
+    for s_idx, sample in enumerate(parsed_testset):
+        sentence = ' '.join([word_id[0] for word_id in sample[:max_words]])
         results_tag, inference_time = model.infer(sentence)
         predictions.append(results_tag)
         comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
@@ -694,6 +697,8 @@ if __name__ == "__main__":
     # f = open('model_prm.pkl', 'rb')
     # param_vector = pickle.load(f)
     # model.test('bla', annotated=True)
+
+
 
     evaluate(my_model, 'train.wtag', w2i, t2i, 1, 5)
 
