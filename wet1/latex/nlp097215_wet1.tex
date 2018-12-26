@@ -1,0 +1,225 @@
+%% LyX 2.2.3 created this file.  For more info, see http://www.lyx.org/.
+%% Do not edit unless you really know what you are doing.
+\documentclass[10pt,a4paper,draft]{article}
+\usepackage[utf8]{inputenc}
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm2e}
+
+\makeatletter
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LyX specific LaTeX commands.
+\special{papersize=\the\paperwidth,\the\paperheight}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+\usepackage{amsfonts}
+\usepackage{amsthm}
+\usepackage{relsize}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\newcommand{\defeq}{\mathrel{\overset{\makebox[0pt]{\mbox{\normalfont\tiny\sffamily def}}}{=}}}
+
+
+
+\makeatother
+
+\begin{document}
+
+\title{NLP - 097215 \\ Computer Excersize No. 1}
+
+\author{Avrech Ben-David - 200452282 \\
+ Ilan Frank - 043493386}
+\maketitle
+\pagebreak
+
+\section{Model No. 1}
+\subsection{Overview}
+We implemented Maximum-Entropy Markov Model (MEMM) as we taught in class. 
+The MEMM model is a feature based discriminative model, which assigns a probability to a full sentence tagging, factorizing the joint probability as follows:
+\begin{equation}
+P(y_1, y_2, ...., y_n|x;v) = \prod_{i=1}^n{P(y_i|y_1,...,y_{i-1},x;v)}
+\end{equation} 
+The probability of tagging the word $x_i$ by $y_i$ is computed by the softmax term:
+\begin{equation}
+P(y_i|y_1,...,y_{i-1},x;v)  = \dfrac{e^{f(x_i,y_i) \cdot v}}{\mathlarger{\sum}_{y' \in Y}e^{f(x_i,y') \cdot v}}
+\end{equation} 
+Where $f(x_i,y_i)$ is a featurizing function, which takes the context of the word $x_i$ (considering the whole sentence, and the previos words' tags) and calculate a binari feature vector. \\
+
+The feature vector of each tag proposal is weighted by the model's parameter vector $v$. The parameters $v$ are learned upon the training-set in order to maximize the log-likelyhood of the correct tagging for each word-tag pair in the corpus $S$. TODO - AM I RIGHT??????????? \\
+\begin{align}
+	v 	&= \argmax_{v'} log\Bigg( \mathlarger{\prod}_{(x_i,y_i) \in S}	\dfrac{e^{f(x_i,y_i) \cdot v'}}{\mathlarger{\sum}_{y' \in Y}e^{f(x_i,y') \cdot v'}}\Bigg) \\
+		&= \argmax_{v'}\mathlarger{\mathlarger{\sum}}_{(x_i,y_i) \in S}{log\Bigg(\dfrac{e^{f(x_i,y_i) \cdot v'}}{\mathlarger{\sum}_{y' \in Y}e^{f(x_i,y') \cdot v'}}\Bigg)} \\
+		&= \argmax_{v'}\mathlarger{\mathlarger{\sum}}_{(x_i,y_i) \in S}f(x_i,y_i) \cdot v' - log\Bigg(\mathlarger{\sum}_{y' \in Y}e^{f(x_i,y') \cdot v'}\Bigg)
+\end{align}
+
+If we want to prevent overflow in the exponent calculations, we have to use the safe softmax version $SafeSoftmax(\vec{x}) = Softmax(\vec{x} - max(\vec{x}))$:
+\begin{align}
+	v 	&= \argmax_{v'}\mathlarger{\mathlarger{\sum}}_{(x_i,y_i) \in S}{log\Bigg(\dfrac{e^{f(x_i,y_i) \cdot v' - \max_{y'}f(x_i,y') \cdot v'}}{\mathlarger{\sum}_{y' \in Y}e^{f(x_i,y') \cdot v'- max_{y'}f(x_i,y') \cdot v'}}\Bigg)} \\
+		&= \argmax_{v'}\mathlarger{\mathlarger{\sum}}_{(x_i,y_i) \in S}f(x_i,y_i) \cdot v' - max_{y'}f(x_i,y') \cdot v' - log\Bigg(\mathlarger{\sum}_{y' \in Y}e^{f(x_i,y') \cdot v' - max_{y'}f(x_i,y') \cdot v'}\Bigg)
+\end{align}
+
+The model features were defined according to Ratnaparkhi.
+
+
+
+
+
+
+
+
+
+
+
+
+
+The model is composed of the following parts:
+\begin{list}{}{}
+	\item[•] Data-preprocessing, and feature set selection.
+	\item[•] Training - Parameter vector optimization.
+	\item[•] Inference - A modified Viterbi algorithm.
+\end{list}
+After describing our considerations of the model implementation in detail, we show our model performance on the test-set.
+
+\subsection{Data Preprocessing and Feature-Set Selection}
+
+\section{Question 1.}
+
+Define a trigram model: 
+\begin{equation}
+q(w_{i}\mid w_{i-1},w_{i-2})=\lambda_{1}q_{ML}(w_{i}\mid w_{i-1},w_{i-2})+\lambda_{2}q_{ML}(w_{i}\mid w_{i-1})+\lambda_{3}q_{ML}(w_{i})
+\end{equation}
+$S=\{s_{1},s_{2},...,s_{N}\}$ - a validation set consists of $N$
+sentences. The number of appearances of a trigram in the validation
+set: 
+\begin{equation}
+c'(w_{1},w_{2},w_{3})
+\end{equation}
+An objective function: 
+\begin{equation}
+L(\lambda_{1},\lambda_{2},\lambda_{3})=\mathlarger{\mathlarger{\sum}}_{\{w_{1},w_{2},w_{3}\}\in S}c'(w_{1},w_{2},w_{3})log(q(w_{i}\mid w_{i-1},w_{i-2}))
+\end{equation}
+The perplexity score: 
+\begin{equation}
+l=\dfrac{1}{N}\mathlarger{\mathlarger{\sum}}_{s_{i}\in S}{log(p(s_{i}))}
+\end{equation}
+\begin{equation}
+p(q)=2^{-l}
+\end{equation}
+
+Prove that maximizing $L$ on the validation set is equal to minimizing
+the perplexity score. \begin{proof} Minimizing the perplexity score:
+\\
+ 
+\begin{align}
+\argmin_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}p(q) & =\argmin_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}2^{-l}\\
+ & =\argmax_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}\dfrac{1}{N}\mathlarger{\mathlarger{\sum}}_{s_{i}\in S}{log(p(s_{i}))}\\
+ & =\argmax_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}\mathlarger{\mathlarger{\sum}}_{s_{i}\in S}{log(p(s_{i}))}
+\end{align}
+The probability of a full sentence is factorized according to the trigram
+model: 
+\begin{align}
+ & =\argmax_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}\mathlarger{\mathlarger{\sum}}_{s_{i}\in S}{log\mathlarger{\mathlarger{\prod}}_{w_{j}\in s_{i}}q(w_{j}\mid w_{j-1},w_{j-2})}\\
+ & =\argmax_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}\mathlarger{\mathlarger{\sum}}_{s_{i}\in S}{\mathlarger{\mathlarger{\sum}}_{w_{j}\in s_{i}}log(q(w_{j}\mid w_{j-1},w_{j-2}))}
+\end{align}
+The double sum in (10) can be replaced by a single sum, which sums
+the probability of the trigrams over the entire validation set, word
+by word: 
+\begin{align}
+ & =\argmax_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}\mathlarger{\mathlarger{\sum}}_{w_{j}\in S}log(q(w_{j}\mid w_{j-1},w_{j-2}))
+\end{align}
+By definition, each trigram is summed exactly $c'(w_{1},w_{2},w_{3})$
+times. So instead of summing over the words in the validation set
+as in (10), we should sum over the trigrams themselves, and weigh
+each trigram by its appearance counter: 
+\begin{align}
+ & =\argmax_{\{\lambda_{1},\lambda_{2},\lambda_{3}\}}\mathlarger{\mathlarger{\sum}}_{\{w_{j},w_{j-1},w_{j-2}\}\in S}c'(w_{1},w_{2},w_{3})log(q(w_{j}\mid w_{j-1},w_{j-2}))
+\end{align}
+This is exactly the term of the objective function. \end{proof}
+
+\section*{Question 2.}
+
+The problem with the proposed estimation method is that it does not
+solve the case of zero counts. The maximum likelihood estimator is
+still undefined if a the bigram in it's denominator is zero. This
+smoothing method improves the prediction only for bigrams which have
+been seen in the training set.
+
+Another problem is evaluating the lambdas. The described function is
+not differential, so there is not a simple way to find the optimal 
+values (say using gradient descent).
+
+\section*{Question 3.}
+
+In the standard Viterbi we take the tag sets to be the set of all tags. In this case
+we can use our prior knowledge to limit each set $S_k$ to $T(x_k)$.\
+
+\begin{algorithm}[H]
+ \KwIn{A sentence $x_1,..,x_n$, parameters $q(s|u,v)$ and $e(x|s)$}
+
+ Set $\pi(0,*,*)$ \
+ 
+ Define $S_{-1}=S_0=\{*\}$, $S_k=T(x_k)$ for $k\in\{1,..,n\}$ \
+ 
+ \For{k=1..n}{
+  \For{$u\in S_{k-1}, v\in S_k $}{
+   $\pi(k,u,v)=\max_{w\in S_{k-2}} \pi(k-1,w,u)q(v|w,u)e(x_k|v)$\
+   
+   $ bp(k,u,v)=arg\,max_{w\in S_{k-2}} \pi(k-1,w,u)q(v|w,u)e(x_k|v)$\
+   
+   }
+ }
+Set $(y_{n-1},y_n)=arg\,max_{u,v} \pi(n,u,v)q(STOP|u,v)$ \
+
+\For{$k=(n-2)..1$}{
+ $y_k=bp(k+2,y_{k+1},y_{k+2})$
+ }
+return $y_1,..,y_n$
+\end{algorithm} \
+
+By limiting the tags sets in the main loop from $S$ to $T(x_i)$, we change the Viterbi running time from $O(n|S|^3)$ to $O(n|K|^3)$
+
+\section*{Question 4.}
+
+Define a trigram model as follows: 
+\begin{equation}
+p(\vec{w})\defeq p(w_{1})p(w_{2}\mid w_{1})p(w_{2}\mid w_{1},w_{2})\cdots p(w_{n}\mid w_{n-2},w_{n-1})
+\end{equation}
+
+\subsection*{1.}
+
+Lets expand (13) using the naive estimates: \\
+ $p(w_{n}\mid w_{n-2},w_{n-1})\defeq\dfrac{c(w_{n-2},w_{n-1},w_{n})}{c(w_{n-2},w_{n-1})}$
+\begin{equation}
+p(\vec{w})=\dfrac{c(w_{1})}{c()}\dfrac{c(w_{1},w_{2})}{c(w_{1})}\dfrac{c(w_{1},w_{2},w_{3})}{c(w_{1}w_{2})}\dfrac{c(w_{2},w_{3},w_{4})}{c(w_{2}w_{3})}\cdots\dfrac{c(w_{n-2},w_{n-1},w_{n})}{c(w_{n-2},w_{n-1})}
+\end{equation}
+
+\subsection*{2.}
+
+Define the reversed trigram model: 
+\begin{equation}
+p_{reversed}(\vec{w})\defeq p(w_{n})p(w_{n-1}\mid w_{n})p(w_{n-2}\mid w_{n},w_{n-1})\cdots p(w_{1}\mid w_{3},w_{2})
+\end{equation}
+Lets expand the term above using the naive ML estimates: 
+\begin{equation}
+p_{reversed}(\vec{w})=\dfrac{c(w_{n})}{c()}\dfrac{c(w_{n-1},w_{n})}{c(w_{n})}\cdots\dfrac{c(w_{1},w_{2},w_{3})}{c(w_{2},w_{3})}
+\end{equation}
+We get:
+\begin{align}
+\bar{p}(\vec{w}) & =\dfrac{c(w_{1})}{c()}\dfrac{c(w_{1},w_{2})}{c(w_{1})}\dfrac{c(w_{1},w_{2},w_{3})}{c(w_{1}w_{2})}\dfrac{c(w_{2},w_{3},w_{4})}{c(w_{2}w_{3})}\cdots\dfrac{c(w_{n-2},w_{n-1},w_{n})}{c(w_{n-2},w_{n-1})}\\
+ & =\dfrac{c(w_{1},w_{2},w_{3})}{c()}\dfrac{c(w_{2},w_{3},w_{4})}{c(w_{2}w_{3})}\cdots\dfrac{c(w_{n-2},w_{n-1},w_{n})}{c(w_{n-2},w_{n-1})}\\
+ & =\dfrac{c(w_{1},w_{2},w_{3})}{c(w_{2}w_{3})}\dfrac{c(w_{2},w_{3},w_{4})}{c(w_{3},w_{4})}\cdots\dfrac{c(w_{n-2},w_{n-1},w_{n})}{c(w_{n-1},w_{n})}\dfrac{c(w_{n-1},w_{n})}{c(w_{n})}\dfrac{c(w_{n})}{c()}\\
+ & =\bar{p}_{reversed}(\vec{w})
+\end{align}
+
+\subsection*{3.}
+
+The parameter which prevents ending a sentence with \char`\"{}the\char`\"{}
+is the last factor in the multiplication term - $\dfrac{c(w_{n-1},w_{n},< \backslash n>)}{c(w_{n-1},w_{n})}$.
+The word \char`\"{}the\char`\"{} probably was never seen in the end
+of any sentence in the training data, so the count term $c(w_{n-1},w_{n},< \backslash n>)$ will be equal to
+zero. In fact we smooth the probability, so we won't get identical
+zero, but the matter is done.
+\end{document}
