@@ -43,7 +43,7 @@ class Context:
 class MEMM:
     BEAM_MIN = 10
 
-    def __init__(self, sentences, w2i, i2w, t2i, i2t, wtp):
+    def __init__(self, sentences, w2i, i2w, t2i, i2t, l2=0.1, verbose=1):
         '''
 
         :param sentences: The whole corpus in integer representation.
@@ -55,19 +55,19 @@ class MEMM:
         '''
         # prepare data and get statistics
         print('{} - processing data'.format(datetime.datetime.now()))
+        self.verbose = verbose
         self.sentences = sentences # integer representation
         # conversions:
         self.w2i = w2i
         self.i2w = i2w
         self.t2i = t2i
         self.i2t = i2t
-        self.wtp = wtp # word_tag pairs.
+        self.wtp = None # word_tag pairs.
         self.tagrams = None
         # features counts & offset:
-        self.n_wtp = sum([len(d.keys()) for d in self.wtp])
-        self.wtp_offset = 0
-        self.unigram_offset = self.n_wtp
-        self.bigram_offset = self.unigram_offset + len(i2t)
+        self.wtp_offset = None
+        self.unigram_offset = None
+        self.bigram_offset = None
         self.trigram_offset = None
         self.pref_offset = None
         self.suff_offset = None
@@ -86,12 +86,13 @@ class MEMM:
         self.enriched_tags = [None] + self.tags
         self.word_vectors = None
         self.parameter_vector = None
+        self.l2 = l2
         self.empirical_counts = None
         self.word_positive_indices = None
         self.use_vector_form = False
         self.l_counter = self.l_grad_counter = 0
         self.safe_softmax = True
-        self.verbose = 1
+
         self.get_features()
 
     @staticmethod
@@ -125,7 +126,7 @@ class MEMM:
 
         selected_prefix_tag_pairs = {}
         selected_suffix_tag_pairs = {}
-        tagrams = [[unigram_idx + self.unigram_offset, {}] for unigram_idx in range(len(self.i2t))]
+        tagrams = [[unigram_idx, {}] for unigram_idx in range(len(self.i2t))] # adding offset afterward
 
         for s_idx, sentence in enumerate(self.sentences):
             if np.mod(s_idx,500) == 0:
@@ -140,13 +141,13 @@ class MEMM:
                 prev_tag = sentence[i - 1][1] if i > 0 else None
                 prev_prev_tag = sentence[i - 2][1] if i > 1 else None
 
-                # self.safe_add(word_unigrams_counts, word)
+                self.safe_add(word_unigrams_counts, word)
                 self.safe_add(tag_unigrams_counts, tag)
                 self.safe_add(word_tag_counts, word_tag)
-                # self.safe_add(word_bigrams_counts, (prev_word, word))
+                self.safe_add(word_bigrams_counts, (prev_word, word))
                 if i > 0:
                     self.safe_add(tag_bigrams_counts, (prev_tag, tag))
-                # self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
+                self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
                 if i > 1:
                     self.safe_add(tag_trigrams_counts, (prev_prev_tag, prev_tag, tag))
 
@@ -184,8 +185,20 @@ class MEMM:
                 if i < len(sentence)-1:
                     self.safe_add(next_word_cur_tag, (sentence[i + 1][0], tag))
 
+        ''' Assign feature index for each word-tag pair'''
+        self.wtp_offset = 0
+        wtp = [{}] * word_unigrams_counts.keys().__len__()
+        for wtp_idx, (w, t) in enumerate(word_tag_counts.keys()):
+            wtp[w][t] = wtp_idx + self.wtp_offset
+        self.wtp = wtp
 
-        self.trigram_offset = self.bigram_offset + len(tag_bigrams_counts.keys())
+        ''' assign feature index for tags n-grams'''
+        self.unigram_offset = word_tag_counts.keys().__len__()
+        for unigram_idx in range(tagrams.__len__()):
+            tagrams[unigram_idx][0] += self.unigram_offset
+        self.bigram_offset  = self.unigram_offset + tag_unigrams_counts.keys().__len__()
+        self.trigram_offset = self.bigram_offset  + tag_bigrams_counts.keys().__len__()
+
         # set the bigrams features indices in the feature vector:
         for bigram_idx, (pt, t) in enumerate(tag_bigrams_counts.keys()):
             tagrams[t][1][pt] = [bigram_idx + self.bigram_offset, {}]
@@ -200,18 +213,24 @@ class MEMM:
 
         self.pref_offset = self.trigram_offset + len(tag_trigrams_counts.keys())
         pref_idx = 0
+        selected_prefix_counts = {1: 0, 2: 0, 3: 0, 4: 0}
         for (p_t, count) in prefix_tag_counter.items():
             if count > self.pref_th[len(p_t[0])]:
                 selected_prefix_tag_pairs[p_t] = pref_idx + self.pref_offset
                 pref_idx += 1
+                selected_prefix_counts[len(p_t[0])] += 1
 
         self.suff_offset = self.pref_offset + len(selected_prefix_tag_pairs.keys())
         suff_idx = 0
+        selected_suffix_counts = {1: 0, 2: 0, 3: 0, 4: 0}
         for (s_t, count) in suffix_tag_counter.items():
             if count > self.suff_th[len(s_t[0])]:
                 selected_suffix_tag_pairs[s_t] = suff_idx + self.suff_offset
                 suff_idx += 1
-
+                selected_suffix_counts[len(p_t[0])] += 1
+        if self.verbose == 1:
+            print('Total number of prefix features: ', len(selected_prefix_tag_pairs.keys()), 'prefix features counts:', selected_prefix_counts)
+            print('Total number of suffix features: ', len(selected_suffix_tag_pairs.keys()), 'suffix features counts:', selected_suffix_counts)
         self.feature_set1_offset = self.suff_offset + len(selected_suffix_tag_pairs.keys())
 
         return {'word_count': word_unigrams_counts,
@@ -237,9 +256,11 @@ class MEMM:
 
     def get_features(self):
         # define the features set
-        # tag-word pairs in dataset (#100) ~15K
+        # tag-word pairs in dataset (#100) ~500K
         def set_wtp_feature(cntx, pos_features):
-            pos_features.append(self.wtp[cntx.word][cntx.tag])
+            pos = self.wtp[cntx.word].get(cntx.tag)
+            if pos is not None:
+                pos_features.append(pos)
             return pos_features
         self.feature_set += [set_wtp_feature]
 
@@ -518,7 +539,8 @@ class MEMM:
                 p = self.get_dot_product_from_positive_features(self.word_positive_indices[s_idx][w_idx], v) - safety_term
                 proba += p
                 norm_part += np.log(sum(exponents))
-        res = proba - norm_part
+        res = proba - norm_part - 0.5 * self.l2 * v.T @ v # regularization l2
+
         self.log(f'l = {self.l_counter},{res}')
         self.l_counter += 1
         # return minus res because the optimizer does not know to maximize,
@@ -553,7 +575,7 @@ class MEMM:
                             expected_counts[v_idx] -= softmax_xi_ytag[tag]
 
 
-        res = self.empirical_counts - expected_counts
+        res = self.empirical_counts - expected_counts - self.l2 * v # regularization l2
         self.log(f'grad = {self.l_grad_counter}')
         self.l_grad_counter += 1
         return -res # we return minus res because the optimizer knows only to minimize (-l(v))
@@ -628,16 +650,6 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
         tag2int[t] = idx
         int2tag.append(t)
 
-    # Generate word_tag_pairs dicts:
-    word_tag_pairs = [{}] * len(int2word)
-    for wtp_idx, w_t in enumerate(set(all_words_and_tags)):
-        word_tag_pairs[word2int[w_t[0]]][tag2int[w_t[1]]] = wtp_idx
-
-    # Convert sentences to integer representation:
-    # for s_idx, s in enumerate(sentences):
-    #     for w_idx, w_t in enumerate(s):
-    #         sentences[s_idx][w_idx][0] = word2int[w_t[0]]
-    #         sentences[s_idx][w_idx][1] = tag2int[w_t[1]]
 
     all_words_and_tags_int = []
     w2i = lambda w: word2int.get(num2one(w), -1)
@@ -648,13 +660,9 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
         sentences_int.append(words_and_tags_int)
         all_words_and_tags_int += words_and_tags_int
 
-    # tags_counter = Counter(all_tags_list)
-    # all_words_list = [word[0] for word in all_words_and_tags]
-    # words_counter = Counter(all_words_list)
-    # all_words_set = set(all_words_list)
     print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
 
-    return sentences_int, w2i, int2word, tag2int, int2tag, word_tag_pairs
+    return sentences_int, w2i, int2word, tag2int, int2tag
 
 def parse_test_set(filename, n=None):
     '''
@@ -694,9 +702,9 @@ def evaluate(model, testset_file, n_samples=1, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag')
+    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag')
 
-    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t, wtp)
+    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t)
     train_time = my_model.train_model()
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
@@ -707,7 +715,7 @@ if __name__ == "__main__":
 
 
 
-    evaluate(my_model, 'train.wtag', max_words=100)
+    evaluate(my_model, 'train.wtag', max_words=10)
 
     # Evaluate test set:
     evaluate(my_model, 'test.wtag', 1, 5)
