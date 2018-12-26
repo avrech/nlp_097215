@@ -43,14 +43,28 @@ class Context:
 class MEMM:
     BEAM_MIN = 10
 
-    def __init__(self, sentences, w2i, i2w, t2i, i2t):
+    def __init__(self, sentences, w2i, i2w, t2i, i2t, wtp):
         # prepare data and get statistics
         print('{} - processing data'.format(datetime.datetime.now()))
-        self.sentences = sentences
+        self.sentences = sentences # integer representation
+        # conversions:
         self.w2i = w2i
         self.i2w = i2w
         self.t2i = t2i
-        self.i2t - i2t
+        self.i2t = i2t
+        self.wtp = wtp # word_tag pairs.
+        self.tagrams = None
+        # features counts & offset:
+        self.n_wtp = sum([len(d.keys()) for d in self.wtp])
+        self.wtp_offset = 0
+        self.unigram_offset = self.n_wtp
+        self.bigram_offset = self.unigram_offset + len(i2t)
+        self.trigram_offset = None
+        self.pref_offset = None
+        self.suff_offset = None
+
+        self.unused_offset = None
+
         self.text_stats = self.get_text_statistics()
         self.tags = list(self.text_stats['tag_count'].keys())
         print('{} - preparing features'.format(datetime.datetime.now()))
@@ -72,12 +86,14 @@ class MEMM:
 
     @staticmethod
     def safe_add(curr_dict, key):
-        if key not in curr_dict:
-            curr_dict[key] = 1
-        else:
-            curr_dict[key] += 1
+        curr_dict[key] = curr_dict.get(key, 0) + 1
+        # if key not in curr_dict:
+        #     curr_dict[key] = 1
+        # else:
+        #     curr_dict[key] += 1
 
     def get_text_statistics(self):
+
         print('{} - getting text stats'.format(datetime.datetime.now()))
         word_tag_counts = {}
         word_unigrams_counts = {}
@@ -96,6 +112,8 @@ class MEMM:
         last_word_tag = {}
         prev_word_cur_tag = {}
         next_word_cur_tag = {}
+
+        tagrams = [[unigram_idx + self.unigram_offset, {}] for unigram_idx in range(len(self.i2t))]
 
         for sentence in self.sentences:
             for i, word_tag in enumerate(sentence):
@@ -116,6 +134,16 @@ class MEMM:
                 self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
                 self.safe_add(tag_trigrams_counts, (prev_prev_tag, prev_tag, tag))
 
+                self.trigram_offset = self.bigram_offset + len(tag_bigrams_counts.keys())
+                # set the bigrams features indices in the feature vector:
+                for bigram_idx, (pt, t) in enumerate(tag_bigrams_counts.keys()):
+                    tagrams[t][1][pt] = [bigram_idx + self.bigram_offset, {}]
+                # set the trigrams features indices in the feature vector:
+                for trigram_idx, (ppt, pt, t) in enumerate(tag_trigrams_counts.keys()):
+                    tagrams[t][1][pt][1][ppt] = trigram_idx + self.trigram_offset
+
+                # convert word to string to process charachter features:
+                word = self.i2w[word]
                 self.safe_add(prefix_tag_counter, (word[:1], tag))
                 if len(word) > 1:
                     self.safe_add(suffix_tag_counter, (word[-1:], tag))
@@ -147,6 +175,24 @@ class MEMM:
                 if i < len(sentence)-1:
                     self.safe_add(next_word_cur_tag, (sentence[i + 1][0], tag))
 
+                ''' Filter prefix and suffix'''
+                self.pref_th = {1: 1000, 2: 500, 3: 100, 4: 100}
+                self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
+
+                self.pref_offset = self.trigram_offset + len(tag_trigrams_counts.keys())
+                selected_prefix_tag_pairs = {}
+                for pref_idx, (p_t, count) in enumerate(self.text_stats['prefix_tag'].items()):
+                    if count > self.pref_th[len(p_t[0])]:
+                        selected_prefix_tag_pairs[p_t] = pref_idx + self.pref_offset
+
+                self.suff_offset = self.pref_offset + len(selected_prefix_tag_pairs.keys())
+                selected_suffix_tag_pairs = {}
+                for suff_idx, (s_t, count) in enumerate(self.text_stats['suffix_tag'].items()):
+                    if count > self.suff_th[len(s_t[0])]:
+                        selected_prefix_tag_pairs[s_t] = suff_idx + self.suff_offset
+
+
+        self.tagrams = tagrams
         return {'word_count': word_unigrams_counts,
                 'tag_count': tag_unigrams_counts,
                 'word_tag_pairs': word_tag_counts,
@@ -163,75 +209,77 @@ class MEMM:
                 'second_word_tag': second_word_tag,
                 'last_word_tag': last_word_tag,
                 'prev_word_cur_tag': prev_word_cur_tag,
-                'next_word_cur_tag': next_word_cur_tag
+                'next_word_cur_tag': next_word_cur_tag,
+                'selected_prefix_tag_pairs': selected_prefix_tag_pairs,
+                'selected_suffix_tag_pairs': selected_suffix_tag_pairs,
                 }
 
     def get_features(self):
         # define the features set
         # tag-word pairs in dataset (#100) ~15K
-        self.feature_set += [(lambda w, t: (lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
-                             for w, t in self.text_stats['word_tag_pairs'].keys()]
-        ''' Filter prefix and suffix'''
-        # # Define thresholds:
-        # pref_th = {1: 1000, 2: 1000, 3: 500, 4: 500}
-        # selected_prefix = {1: [], 2: [], 3: [], 4: []}
-        # # print('prefix counts:')
-        # for l in np.arange(1, 5):
-        #     for p in prefix[l].keys():
-        #         if prefix[l][p] > pref_th[l]:
-        #             selected_prefix[l].append(p)
-        #             # print(p, ': ', prefix[l][p])
-        #
-        # suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
-        # selected_suffix = {1: [], 2: [], 3: [], 4: []}
-        # # print('suffix counts:')
-        # for l in np.arange(1, 5):
-        #     for p in suffix[l].keys():
-        #         if suffix[l][p] > suff_th[l]:
-        #             selected_suffix[l].append(p)
-        #             # print(p, ': ', suffix[l][p])
-        #
-        # print('# prefix features: ',
-        #       '-1', selected_prefix[1].__len__(),
-        #       '-2', selected_prefix[2].__len__(),
-        #       '-3', selected_prefix[3].__len__(),
-        #       '-4', selected_prefix[4].__len__(),
-        #       ' | Total-', sum([p.__len__() for p in selected_prefix.values()]))
-        # print('# suffix features: ',
-        #       '-1', selected_suffix[1].__len__(),
-        #       '-2', selected_suffix[2].__len__(),
-        #       '-3', selected_suffix[3].__len__(),
-        #       '-4', selected_suffix[4].__len__(),
-        #       ' | Total-', sum([p.__len__() for p in selected_suffix.values()]))
-        #
-        self.pref_th = {1: 1000, 2: 500, 3: 100, 4: 100}
-        self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
+        def set_wtp_feature(cntx, pos_features):
+            return pos_features.append(self.wtp[cntx.word][cntx.tag])
+        self.feature_set += [set_wtp_feature]
 
-        selected_suffix_tag_pairs = [s_t for (s_t, count) in self.text_stats['suffix_tag'].items() if
-                                     count > self.suff_th[len(s_t[0])]]
-        selected_prefix_tag_pairs = [p_t for (p_t, count) in self.text_stats['prefix_tag'].items() if
-                                     count > self.pref_th[len(p_t[0])]]
+        # self.feature_set += [(lambda w, t: (lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
+        #                      for w, t in self.text_stats['word_tag_pairs'].keys()]
 
         # suffixes <= 4 and tag pairs in dataset (#101)
-        self.feature_set += [(lambda suff, t: (lambda cntx: 1 if cntx.word.endswith(suff) and
-                                                                 cntx.tag == t else 0))(suff, t)
-                             for suff, t in selected_suffix_tag_pairs]
+        def set_suffix_tag_features(cntx, pos_features):
+            word = self.i2w[cntx.word]
+            for suff_len in np.arange(1,5):
+                s_t = (word[-suff_len:], cntx.tag)
+                pos = self.text_stats['selected_suffix_tag_pairs'].get(s_t)
+                if pos is not None:
+                    pos_features.append(pos)
+            return pos_features
+        self.feature_set += [set_suffix_tag_features]
+
+        # self.feature_set += [(lambda suff, t: (lambda cntx: 1 if cntx.word.endswith(suff) and
+        #                                                          cntx.tag == t else 0))(suff, t)
+        #                      for suff, t in self.text_stats['selected_suffix_tag_pairs']]
+
         # prefixes <= 4 and tag pairs in dataset (#102)
-        self.feature_set += [(lambda pref, t: (lambda cntx: 1 if cntx.word.startswith(pref) and
-                                                                 cntx.tag == t else 0))(pref, t)
-                             for pref, t in selected_prefix_tag_pairs]
-        # tag trigrams in datset (#103) ~8K
-        self.feature_set += [(lambda prev_prev_tag, prev_tag, tag:
-                              (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag
-                                                 and cntx.prev_prev_tag == prev_prev_tag else 0))
-                             (prev_prev_tag, prev_tag, tag)
-                             for prev_prev_tag, prev_tag, tag in self.text_stats['tag_trigrams'].keys()]
-        # tag bigrams in datset (#104) <1K
-        self.feature_set += [(lambda prev_tag, tag:
-                              (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag else 0))(prev_tag, tag)
-                             for prev_tag, tag in self.text_stats['tag_bigrams'].keys()]
-        # tag unigrams in datset (#105)
-        self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
+        def set_prefix_tag_features(cntx, pos_features):
+            word = self.i2w[cntx.word]
+            for pref_len in np.arange(1, 5):
+                p_t = (word[:pref_len], cntx.tag)
+                pos = self.text_stats['selected_prefix_tag_pairs'].get(p_t)
+                if pos is not None:
+                    pos_features.append(pos)
+            return pos_features
+
+        self.feature_set += [set_prefix_tag_features]
+
+        # self.feature_set += [(lambda pref, t: (lambda cntx: 1 if cntx.word.startswith(pref) and
+        #                                                          cntx.tag == t else 0))(pref, t)
+        #                      for pref, t in self.text_stats['selected_prefix_tag_pairs']]
+
+        def set_tagrams_features(cntx, pos_features):
+            pos_features.append(self.tagrams[cntx.tag][0]) # unigram feature, always exists.
+            pos_bigram  = self.tagrams[cntx.tag][1].get(cntx.prev_tag)
+            if pos_bigram is None:
+                return pos_features
+            pos_features.append(pos_bigram)
+            pos_trigram = self.tagrams[cntx.tag][1].get(cntx.prev_tag).get(cntx.prev_prev_tag)
+            if pos_trigram is None:
+                return pos_features
+            return pos_features.append(pos_trigram)
+        self.feature_set += [set_tagrams_features]
+
+
+        # # tag trigrams in datset (#103) ~8K
+        # self.feature_set += [(lambda prev_prev_tag, prev_tag, tag:
+        #                       (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag
+        #                                          and cntx.prev_prev_tag == prev_prev_tag else 0))
+        #                      (prev_prev_tag, prev_tag, tag)
+        #                      for prev_prev_tag, prev_tag, tag in self.text_stats['tag_trigrams'].keys()]
+        # # tag bigrams in datset (#104) <1K
+        # self.feature_set += [(lambda prev_tag, tag:
+        #                       (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag else 0))(prev_tag, tag)
+        #                      for prev_tag, tag in self.text_stats['tag_bigrams'].keys()]
+        # # tag unigrams in datset (#105)
+        # self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
 
         # capital first letter tag
         self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
@@ -579,9 +627,10 @@ def get_parsed_sentences_from_tagged_file(filename):
         tag2int[t] = idx
         int2tag.append(t)
 
-    # Generate word_tag_options dicts:
-    word_tag_pairs = [[]] * len(int2word)
-    [word_tag_pairs[word2int[w_t[0]]].append(tag2int[w_t[1]]) for w_t in all_words_and_tags]
+    # Generate word_tag_pairs dicts:
+    word_tag_pairs = [{}] * len(int2word)
+    for wtp_idx, w_t in set(all_words_and_tags):
+        word_tag_pairs[word2int[w_t[0]]][tag2int[w_t[1]]] = wtp_idx
 
     # Convert sentences to integer representation:
     for s_idx, s in enumerate(sentences):
@@ -595,7 +644,7 @@ def get_parsed_sentences_from_tagged_file(filename):
     # words_counter = Counter(all_words_list)
     # all_words_set = set(all_words_list)
     print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
-    return sentences, word2int, int2word, tag2int, int2tag
+    return sentences, word2int, int2word, tag2int, int2tag, word_tag_pairs
 
 
 def evaluate(model, testset_file, n_samples, max_words=None):
@@ -614,9 +663,9 @@ def evaluate(model, testset_file, n_samples, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag')
+    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag')
 
-    my_model = MEMM(parsed_sentences[:50], w2i, i2w, t2i, i2t)
+    my_model = MEMM(parsed_sentences[:50], w2i, i2w, t2i, i2t, wtp)
     train_time = my_model.train_model()
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
