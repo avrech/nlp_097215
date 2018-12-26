@@ -71,6 +71,12 @@ class MEMM:
         self.trigram_offset = None
         self.pref_offset = None
         self.suff_offset = None
+        self.cflt_offset = None
+        self.cwt_offset = None
+        self.nt_offset  = None
+        self.fwt_offset = None
+        self.swt_offset = None
+        self.lwt_offset = None
 
         self.feature_set1_offset = None
 
@@ -233,6 +239,42 @@ class MEMM:
             print('Total number of suffix features: ', len(selected_suffix_tag_pairs.keys()), 'suffix features counts:', selected_suffix_counts)
         self.feature_set1_offset = self.suff_offset + len(selected_suffix_tag_pairs.keys())
 
+        ''' assign feature index for capital first letter tag'''
+        cflt = {}
+        self.cflt_offset = self.suff_offset + len(selected_suffix_tag_pairs.keys())
+        for idx, key in enumerate(capital_first_letter_tag.keys()):
+            cflt[key] = idx + self.cflt_offset
+
+        ''' assign feature index for capital word tag'''
+        cwt = {}
+        self.cwt_offset = self.cflt_offset + len(cflt.keys())
+        for idx, key in enumerate(capital_word_tag.keys()):
+            cwt[key] = idx + self.cwt_offset
+
+        ''' assign feature index for number tag'''
+        nt = {}
+        self.nt_offset = self.cwt_offset + len(cwt.keys())
+        for idx, key in enumerate(number_tag.keys()):
+            nt[key] = idx + self.nt_offset
+
+        ''' assign feature index for first_word_tag'''
+        fwt = {}
+        self.fwt_offset = self.nt_offset + len(nt.keys())
+        for idx, key in enumerate(first_word_tag.keys()):
+            fwt[key] = idx + self.fwt_offset
+
+        ''' assign feature index for second_word_tag'''
+        swt = {}
+        self.swt_offset = self.fwt_offset + len(fwt.keys())
+        for idx, key in enumerate(second_word_tag.keys()):
+            swt[key] = idx + self.swt_offset
+
+        ''' assign feature index for last_word_tag'''
+        lwt = {}
+        self.lwt_offset = self.swt_offset + len(swt.keys())
+        for idx, key in enumerate(last_word_tag.keys()):
+            lwt[key] = idx + self.lwt_offset
+
         return {'word_count': word_unigrams_counts,
                 'tag_count': tag_unigrams_counts,
                 'word_tag_pairs': word_tag_counts,
@@ -251,12 +293,18 @@ class MEMM:
                 'prev_word_cur_tag': prev_word_cur_tag,
                 'next_word_cur_tag': next_word_cur_tag,
                 'selected_prefix_tag_pairs': selected_prefix_tag_pairs,
-                'selected_suffix_tag_pairs': selected_suffix_tag_pairs
+                'selected_suffix_tag_pairs': selected_suffix_tag_pairs,
+                'cflt': cflt,
+                'cwt': cwt,
+                'nt': nt,
+                'fwt': fwt,
+                'swt': swt,
+                'lwt': lwt
                 }
 
     def get_features(self):
         # define the features set
-        # tag-word pairs in dataset (#100) ~500K
+        # tag-word pairs in dataset (#100) ~15K
         def set_wtp_feature(cntx, pos_features):
             pos = self.wtp[cntx.word].get(cntx.tag)
             if pos is not None:
@@ -325,35 +373,60 @@ class MEMM:
         # # tag unigrams in datset (#105)
         # self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
 
+        # set first capital letter feature:
+        def set_cflt_features(cntx, pos_features):
+            if self.i2w[cntx.word][0].isupper():
+                pos = self.text_stats['cflt'].get(cntx.tag)
+                if pos is not None:
+                    pos_features.append(pos)
+            return pos_features
+        self.feature_set += [set_cflt_features]
 
-        # capital first letter tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if self.i2w[cntx.word][0].isupper() and cntx.tag == t else 0))(t)
-                             for t in self.text_stats['capital_first_letter_tag'].keys()]
-        # capital word tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in self.i2w[cntx.word]])
-                                                           and cntx.tag == t else 0))(t)
-                             for t in self.text_stats['capital_word_tag'].keys()]
+        # set capital word feature
+        def set_cwt_features(cntx, pos_features):
+            if all([letter.isupper() for letter in self.i2w[cntx.word]]):
+                pos = self.text_stats['cwt'].get(cntx.tag)
+                if pos is not None:
+                    pos_features.append(pos)
+            return pos_features
+        self.feature_set += [set_cwt_features]
+
         # number tag feature
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if self.i2w[cntx.word].replace('.', '', 1).isdigit() # why 1?
-                                                           and cntx.tag == t else 0))(t)
-                             for t in self.text_stats['number_tag'].keys()]
+        def set_nt_features(cntx, pos_features):
+            if self.i2w[cntx.word].replace('.', '', 1).isdigit(): # TODO use is_number instead?
+                pos = self.text_stats['nt'].get(cntx.tag)
+                if pos is not None:
+                    pos_features.append(pos)
+            return pos_features
+        self.feature_set += [set_nt_features]
 
         # first word in sentence tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
-                             for t in self.text_stats['first_word_tag'].keys()]
+        def set_fwt_features(cntx, pos_features):
+            if cntx.index == 0:
+                pos = self.text_stats['fwt'].get(cntx.tag)
+                if pos is not None:
+                    pos_features.append(pos)
+            return pos_features
+        self.feature_set += [set_fwt_features]
 
         # second word in sentence tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 1 and cntx.tag == t else 0))(t)
-                             for t in self.text_stats['second_word_tag'].keys()]
+        def set_swt_features(cntx, pos_features):
+            if cntx.index == 1:
+                pos = self.text_stats['swt'].get(cntx.tag)
+                if pos is not None:
+                    pos_features.append(pos)
+            return pos_features
+        self.feature_set += [set_swt_features]
 
         # last word in sentence tag
-        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.next_word is None and cntx.tag == t else 0))(t)
-                             for t in self.text_stats['last_word_tag'].keys()]
-
-        def set_all_other_features(cntx, pos_features):
-            pos_features += list(np.array([f(cntx) for f in self.feature_set1]).nonzero()[0] + self.feature_set1_offset)
+        def set_lwt_features(cntx, pos_features):
+            if cntx.next_word is None:
+                pos = self.text_stats['lwt'].get(cntx.tag)
+                if pos is not None:
+                    pos_features.append(pos)
             return pos_features
-        self.feature_set += [set_all_other_features]
+        self.feature_set += [set_lwt_features]
+
         # # previous word + current tag pairs (#106) ~23K
         # self.feature_set += [(lambda pw, t: (lambda cntx: 1 if cntx.history[-1] is not None and
         #                                                        cntx.history[-1][0] == pw and
@@ -365,7 +438,7 @@ class MEMM:
         #                                                        cntx.history[-1][0] == nw and
         #                                                        cntx.tag == t else 0))(nw, t)
         #                      for (nw, t) in self.text_stats['prev_word_cur_tag'].keys()]
-        self.num_features = self.feature_set1_offset + len(self.feature_set1)
+        self.num_features = self.lwt_offset + len(self.text_stats['lwt'].keys())
         return self.feature_set, self.tags
 
     def train_model(self, param_vec=None):
@@ -388,7 +461,7 @@ class MEMM:
         print('{} - finding parameter vector'.format(datetime.datetime.now()))
         if param_vec is None:
             param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
-                                                jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
+                                                jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20, 'maxcor': 10, 'disp': True})
 
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
