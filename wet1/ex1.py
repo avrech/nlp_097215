@@ -63,18 +63,18 @@ class MEMM:
         self.pref_offset = None
         self.suff_offset = None
 
-        self.unused_offset = None
+        self.feature_set1_offset = None
 
         self.text_stats = self.get_text_statistics()
         self.tags = list(self.text_stats['tag_count'].keys())
         print('{} - preparing features'.format(datetime.datetime.now()))
         self.num_features = 0
         self.feature_set = []
+        self.feature_set1 = []
+
         self.pref_th = {1: 1000, 2: 1000, 3: 500, 4: 500}
         self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
-        self.get_features()
         self.enriched_tags = [None] + self.tags
-        self.feature_set1 = []
         self.word_vectors = None
         self.parameter_vector = None
         self.empirical_counts = None
@@ -83,6 +83,7 @@ class MEMM:
         self.l_counter = self.l_grad_counter = 0
         self.safe_softmax = True
         self.verbose = 1
+        self.get_features()
 
     @staticmethod
     def safe_add(curr_dict, key):
@@ -113,9 +114,13 @@ class MEMM:
         prev_word_cur_tag = {}
         next_word_cur_tag = {}
 
+        selected_prefix_tag_pairs = {}
+        selected_suffix_tag_pairs = {}
         tagrams = [[unigram_idx + self.unigram_offset, {}] for unigram_idx in range(len(self.i2t))]
 
-        for sentence in self.sentences:
+        for s_idx, sentence in enumerate(self.sentences):
+            if np.mod(s_idx,500) == 0:
+                print('processing the {}th sentence'.format(s_idx))
             for i, word_tag in enumerate(sentence):
 
                 word = word_tag[0]
@@ -126,12 +131,12 @@ class MEMM:
                 prev_tag = sentence[i - 1][1] if i > 0 else None
                 prev_prev_tag = sentence[i - 2][1] if i > 1 else None
 
-                self.safe_add(word_unigrams_counts, word)
+                # self.safe_add(word_unigrams_counts, word)
                 self.safe_add(tag_unigrams_counts, tag)
                 self.safe_add(word_tag_counts, word_tag)
-                self.safe_add(word_bigrams_counts, (prev_word, word))
+                # self.safe_add(word_bigrams_counts, (prev_word, word))
                 self.safe_add(tag_bigrams_counts, (prev_tag, tag))
-                self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
+                # self.safe_add(word_trigrams_counts, (prev_prev_word, prev_word, word))
                 self.safe_add(tag_trigrams_counts, (prev_prev_tag, prev_tag, tag))
 
                 self.trigram_offset = self.bigram_offset + len(tag_bigrams_counts.keys())
@@ -180,17 +185,16 @@ class MEMM:
                 self.suff_th = {1: 100, 2: 100, 3: 100, 4: 100}
 
                 self.pref_offset = self.trigram_offset + len(tag_trigrams_counts.keys())
-                selected_prefix_tag_pairs = {}
-                for pref_idx, (p_t, count) in enumerate(self.text_stats['prefix_tag'].items()):
+                for pref_idx, (p_t, count) in enumerate(prefix_tag_counter.items()):
                     if count > self.pref_th[len(p_t[0])]:
                         selected_prefix_tag_pairs[p_t] = pref_idx + self.pref_offset
 
                 self.suff_offset = self.pref_offset + len(selected_prefix_tag_pairs.keys())
-                selected_suffix_tag_pairs = {}
-                for suff_idx, (s_t, count) in enumerate(self.text_stats['suffix_tag'].items()):
+                for suff_idx, (s_t, count) in enumerate(suffix_tag_counter.items()):
                     if count > self.suff_th[len(s_t[0])]:
                         selected_prefix_tag_pairs[s_t] = suff_idx + self.suff_offset
 
+                self.feature_set1_offset = self.suff_offset + len(selected_suffix_tag_pairs.keys())
 
         self.tagrams = tagrams
         return {'word_count': word_unigrams_counts,
@@ -211,7 +215,7 @@ class MEMM:
                 'prev_word_cur_tag': prev_word_cur_tag,
                 'next_word_cur_tag': next_word_cur_tag,
                 'selected_prefix_tag_pairs': selected_prefix_tag_pairs,
-                'selected_suffix_tag_pairs': selected_suffix_tag_pairs,
+                'selected_suffix_tag_pairs': selected_suffix_tag_pairs
                 }
 
     def get_features(self):
@@ -281,30 +285,35 @@ class MEMM:
         # # tag unigrams in datset (#105)
         # self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
 
+
         # capital first letter tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
                              for t in self.text_stats['capital_first_letter_tag'].keys()]
         # capital word tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in cntx.word])
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in cntx.word])
                                                            and cntx.tag == t else 0))(t)
                              for t in self.text_stats['capital_word_tag'].keys()]
         # number tag feature
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word.replace('.', '', 1).isdigit()
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.word.replace('.', '', 1).isdigit()
                                                            and cntx.tag == t else 0))(t)
                              for t in self.text_stats['number_tag'].keys()]
 
         # first word in sentence tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
                              for t in self.text_stats['first_word_tag'].keys()]
 
         # second word in sentence tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
                              for t in self.text_stats['second_word_tag'].keys()]
 
         # last word in sentence tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        self.feature_set1 += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
                              for t in self.text_stats['last_word_tag'].keys()]
 
+        def set_all_other_features(cntx, pos_features):
+            pos_features += list(np.array([f(cntx) for f in self.feature_set1]).nonzero()[0] + self.feature_set1_offset)
+            return pos_features
+        self.feature_set += [set_all_other_features]
         # # previous word + current tag pairs (#106) ~23K
         # self.feature_set += [(lambda pw, t: (lambda cntx: 1 if cntx.history[-1] is not None and
         #                                                        cntx.history[-1][0] == pw and
@@ -326,7 +335,7 @@ class MEMM:
         word_vectors = []
         word_positive_indices = list()
         for s_idx, sentence in enumerate(self.sentences):
-            positive_indices = list() # a list of the features of each word in the current sentence.
+            positive_indices = list() # a list of the positive features of each word in the current sentence.
             for w_idx in range(len(sentence)):
                 context = Context.get_context_tagged(sentence, w_idx)
                 if self.use_vector_form:
@@ -428,7 +437,10 @@ class MEMM:
         return vector
 
     def get_positive_features_for_context(self, context):
-        return np.array([feature(context) for feature in self.feature_set]).nonzero()
+        pos_features = []
+        for f in self.feature_set:
+            pos_features = f(context,pos_features)
+        return np.array(pos_features)
 
     def get_empirical_counts_from_dict(self):
         emprical_counts = np.zeros(len(self.feature_set))
@@ -589,7 +601,7 @@ class MEMM:
 # receives input file (of tagged sentences),
 # returns a list of sentences, each sentence is a list of (word,tag)s
 # also performs base verification of input
-def get_parsed_sentences_from_tagged_file(filename):
+def get_parsed_sentences_from_tagged_file(filename, n=None):
     '''
     convert words and tags to int.
     :param      filename:
@@ -599,8 +611,21 @@ def get_parsed_sentences_from_tagged_file(filename):
                 tag2int - dict
                 int2tag - list
     '''
+    sentences_int = []
+    word_tag_pairs = None
+    tag2int = dict()
+    int2tag = list()
+    word2int = dict()
+    int2word = list()
+    f_text = None
     print(f'{datetime.datetime.now()} - loading data from file {filename}')
-    f_text = open(filename)
+    with open(filename) as f:
+    # f_text = open(filename)
+        if n is not None:
+            f_text = [next(f) for _ in range(n)]
+        else:
+            f_text = [row for row in f]
+
     all_words_and_tags = []
     sentences = []
     for row in f_text:
@@ -614,44 +639,72 @@ def get_parsed_sentences_from_tagged_file(filename):
 
     # Generate dictionaries for word/tag - int conversion:
     all_words_set = set([word[0] for word in all_words_and_tags])
-    word2int = dict()
-    int2word = list()
     for idx, w in enumerate(all_words_set):
         word2int[w] = idx
         int2word.append(w)
 
     all_tags_set = set([word[1] for word in all_words_and_tags])
-    tag2int = dict()
-    int2tag = list()
     for idx, t in enumerate(all_tags_set):
         tag2int[t] = idx
         int2tag.append(t)
 
     # Generate word_tag_pairs dicts:
     word_tag_pairs = [{}] * len(int2word)
-    for wtp_idx, w_t in set(all_words_and_tags):
+    for wtp_idx, w_t in enumerate(set(all_words_and_tags)):
         word_tag_pairs[word2int[w_t[0]]][tag2int[w_t[1]]] = wtp_idx
 
     # Convert sentences to integer representation:
-    for s_idx, s in enumerate(sentences):
-        for w_idx, w_t in enumerate(s):
-            sentences[s_idx][w_idx][0] = word2int[w_t[0]]
-            sentences[s_idx][w_idx][1] = tag2int[w_t[1]]
+    # for s_idx, s in enumerate(sentences):
+    #     for w_idx, w_t in enumerate(s):
+    #         sentences[s_idx][w_idx][0] = word2int[w_t[0]]
+    #         sentences[s_idx][w_idx][1] = tag2int[w_t[1]]
 
+    all_words_and_tags_int = []
+    # with open(filename) as f_text:
+    for row in f_text:
+        tagged_words = [word.rstrip() for word in row.split(' ')]
+        words_and_tags_int = tuple([(word2int[tagged_word.split('_')[0]], tag2int[tagged_word.split('_')[1]] )
+                                    for tagged_word in tagged_words])
+        sentences_int.append(words_and_tags_int)
+        all_words_and_tags_int += words_and_tags_int
 
     # tags_counter = Counter(all_tags_list)
     # all_words_list = [word[0] for word in all_words_and_tags]
     # words_counter = Counter(all_words_list)
     # all_words_set = set(all_words_list)
     print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
-    return sentences, word2int, int2word, tag2int, int2tag, word_tag_pairs
+    return sentences_int, word2int, int2word, tag2int, int2tag, word_tag_pairs
 
+def parse_test_set(filename, word2int, tag2int, n=None):
+    '''
+    parse input file to sentences. convert words and tags to int according to the training corpus.
+    :param      filename:
+    :return:    sentences - parsed_sentences in integer format.
+    '''
+    sentences_int = []
+    f_text = None
+    print(f'{datetime.datetime.now()} - loading data from file {filename}')
+    with open(filename) as f:
+        if n is not None:
+            f_text = [next(f) for _ in range(n)]
+        else:
+            f_text = [row for row in f]
 
-def evaluate(model, testset_file, n_samples, max_words=None):
-    parsed_testset = get_parsed_sentences_from_tagged_file(testset_file) # TODO: use trainset dictionary for test set.
+    for row in f_text:
+        tagged_words = [word.rstrip() for word in row.split(' ')]
+        # convert strings to integer. if a key has never been seen in corpus, set default value - 7.
+        # TODO: treat numbers!!!
+        words_and_tags_int = tuple([(word2int.get(tagged_word.split('_')[0],7), tag2int.get(tagged_word.split('_')[1],7) )
+                                    for tagged_word in tagged_words])
+        sentences_int.append(words_and_tags_int)
+
+    return sentences_int
+
+def evaluate(model, testset_file, word2int, tag2int, n_samples, max_words=None):
+    parsed_testset = parse_test_set(testset_file, word2int, tag2int, n=n_samples) # TODO: use trainset dictionary for test set.
     predictions = []
     accuracy = []
-    for ii, sample in enumerate(parsed_testset[:n_samples]):
+    for ii, sample in enumerate(parsed_testset):
         sentence = ' '.join([word[0] for word in sample[:max_words]])
         results_tag, inference_time = model.infer(sentence)
         predictions.append(results_tag)
@@ -663,9 +716,9 @@ def evaluate(model, testset_file, n_samples, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag')
+    parsed_sentences, w2i, i2w, t2i, i2t, wtp = get_parsed_sentences_from_tagged_file('train.wtag', n=1000)
 
-    my_model = MEMM(parsed_sentences[:50], w2i, i2w, t2i, i2t, wtp)
+    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t, wtp)
     train_time = my_model.train_model()
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
@@ -674,7 +727,7 @@ if __name__ == "__main__":
     # param_vector = pickle.load(f)
     # model.test('bla', annotated=True)
 
-    evaluate(my_model, 'train.wtag', 1, 5)
+    evaluate(my_model, 'train.wtag', w2i, t2i, 1, 5)
 
     # Evaluate test set:
     evaluate(my_model, 'test.wtag', 1, 5)
