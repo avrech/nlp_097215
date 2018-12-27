@@ -608,7 +608,7 @@ class MEMM:
                 p = self.get_dot_product_from_positive_features(self.word_positive_indices[s_idx][w_idx], v) - safety_term
                 proba += p
                 norm_part += np.log(sum(exponents))
-        res = proba - norm_part - 0.5 * self.l2 * v.T @ v # regularization l2
+        res = proba - norm_part - 0.5 * self.l2 * np.dot(v.T, v) # regularization l2
 
         # self.log('l = ', self.l_counter, ',' ,res)
         self.l_counter += 1
