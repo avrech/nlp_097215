@@ -452,10 +452,10 @@ class MEMM:
         if param_vec is None:
             param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
                                                 jac=self.grad_l,
-                                                options={'maxiter': 20,
+                                                options={'maxiter': 50,
                                                          # 'maxls' : 10, # default 20
                                                          # 'ftol'  : 0.05,
-                                                         'maxfun': 20,
+                                                         'maxfun': 100,
                                                          # 'maxcor': 10,
                                                          'disp': True})
 
@@ -588,9 +588,9 @@ class MEMM:
 
     # the ML estimate maximization function
     def l(self, v):
-        print('optimizer iter no.', self.l_counter)
+        # print('optimizer iter no.', self.l_counter)
         # proba part, the linear term in l(v)
-        proba = 0
+        # proba = 0
         # normalization part, i.e. sum_on_x(i){ log( sum_on_y'[exp(v*f(x(i),y'] ) }
         norm_part = 0
         for s_idx, sentence in enumerate(self.sentences):
@@ -605,17 +605,19 @@ class MEMM:
 
                 safety_term = max(dot_products)
                 exponents = np.exp(np.array(dot_products) - safety_term)
-                p = self.get_dot_product_from_positive_features(self.word_positive_indices[s_idx][w_idx], v) - safety_term
-                proba += p
-                norm_part += np.log(sum(exponents))
-        res = proba - norm_part - 0.5 * self.l2 * np.dot(v.T, v) # regularization l2
-
+                # p = self.get_dot_product_from_positive_features(self.word_positive_indices[s_idx][w_idx], v) - safety_term # TODO optimize.
+                # proba += p
+                norm_part += np.log(sum(exponents)) + safety_term # we need to subtract finally the safety_term  that was in the nominator.
+        proba = np.dot(self.empirical_counts, v)
+        res = proba - norm_part - 0.5 * self.l2 * np.dot(v, v) # regularization l2
+        print('L(v) iter np. ', self.l_counter, res)
         # self.log('l = ', self.l_counter, ',' ,res)
         self.l_counter += 1
 
         # return minus res because the optimizer does not know to maximize,
         # so we minimize (-l(v))
         return -res
+
 
     def grad_l(self, v):
         # self.log('grad = ', self.l_grad_counter)
@@ -637,7 +639,7 @@ class MEMM:
                     dot_products.append(self.get_dot_product_from_positive_features(pf, v))
                 dot_products = np.array(dot_products) - max(dot_products) # make the exponent safe.
 
-                exponents = np.exp2(dot_products)
+                exponents = np.exp(dot_products)
                 softmax_denominator = sum(exponents)
                 softmax_xi_ytag = exponents / softmax_denominator
 
@@ -646,10 +648,11 @@ class MEMM:
                 if softmax_denominator > 0:
                     for tag, pos_f in enumerate(pf_per_tag):
                         for v_idx in pos_f:
-                            expected_counts[v_idx] -= softmax_xi_ytag[tag]
+                            expected_counts[v_idx] += softmax_xi_ytag[tag]
 
 
         res = self.empirical_counts - expected_counts - self.l2 * v # regularization l2
+        print('dL(v) iter np. ', self.l_counter, res)
         return -res # we return minus res because the optimizer knows only to minimize (-l(v))
 
 
@@ -763,10 +766,14 @@ def evaluate(model, testset_file, n_samples=1, max_words=None):
     accuracy = []
 
     for s_idx, sample in enumerate(parsed_testset):
-        sentence = ' '.join([word_id[0] for word_id in sample[:max_words]])
+        if max_words is None:
+            nw = len(sample)
+        else:
+            nw = min(len(sample), max_words)
+        sentence = ' '.join([word_id[0] for word_id in sample[:nw]])
         results_tag, inference_time = model.infer(sentence)
         predictions.append(results_tag)
-        comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
+        comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(nw)]
         accuracy.append(sum(comparison) / len(comparison))
         tagged_sentence = ['{}_{}'.format(sentence.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
     print('results: time - ', "{0:.2f}".format(inference_time), '[sec], tags - ', " ".join(tagged_sentence))
@@ -774,7 +781,7 @@ def evaluate(model, testset_file, n_samples=1, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag',n=1000)
+    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag',n=100)
 
     my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t)
     train_time = my_model.train_model()
