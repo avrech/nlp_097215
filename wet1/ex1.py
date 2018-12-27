@@ -452,11 +452,11 @@ class MEMM:
         if param_vec is None:
             param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
                                                 jac=self.grad_l,
-                                                options={'maxiter': 17,
-                                                         'maxls' : 10, # default 20
-                                                         'ftol'  : 0.05,
+                                                options={'maxiter': 20,
+                                                         # 'maxls' : 10, # default 20
+                                                         # 'ftol'  : 0.05,
                                                          'maxfun': 20,
-                                                         'maxcor': 10,
+                                                         # 'maxcor': 10,
                                                          'disp': True})
 
         self.parameter_vector = param_vec.x
@@ -473,7 +473,7 @@ class MEMM:
         :param sentence: string of words, separated by space chars. example: 'The dog barks'
         :return: a list of corresponding tags - for example: [DT, NN, Vt]
         '''
-        print(f'{datetime.datetime.now()} - predict for {sentence}')
+        print(datetime.datetime.now(), ' - predict for ', sentence)
         t_start = time.time()
         parsed_sentence_str = [word.rstrip() for word in sentence.split(' ')]
         parsed_sentence = [self.w2i(w) for w in parsed_sentence_str]
@@ -610,7 +610,7 @@ class MEMM:
                 norm_part += np.log(sum(exponents))
         res = proba - norm_part - 0.5 * self.l2 * v.T @ v # regularization l2
 
-        self.log(f'l = {self.l_counter},{res}')
+        # self.log('l = ', self.l_counter, ',' ,res)
         self.l_counter += 1
 
         # return minus res because the optimizer does not know to maximize,
@@ -618,7 +618,7 @@ class MEMM:
         return -res
 
     def grad_l(self, v):
-        self.log(f'grad = {self.l_grad_counter}')
+        # self.log('grad = ', self.l_grad_counter)
         self.l_grad_counter += 1
         # expected counts
         expected_counts = np.zeros(v.shape)
@@ -691,7 +691,7 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
     word2int = dict()
     int2word = list()
     f_text = None
-    print(f'{datetime.datetime.now()} - loading data from file {filename}')
+    print(datetime.datetime.now(), ' - loading data from file', filename)
     with open(filename) as f:
     # f_text = open(filename)
         if n is not None:
@@ -709,7 +709,7 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
         all_words_and_tags += words_and_tags
     bad_words = [word for word in all_words_and_tags if len(word) != 2]
     if bad_words:
-        print(f'found {len(bad_words)} bad words - {bad_words}')
+        print('found ', len(bad_words),' bad words - ', bad_words)
 
     # Generate dictionaries for word/tag - int conversion:
     all_words_set = set([word[0] for word in all_words_and_tags])
@@ -732,7 +732,7 @@ def get_parsed_sentences_from_tagged_file(filename, n=None):
         sentences_int.append(words_and_tags_int)
         all_words_and_tags_int += words_and_tags_int
 
-    print(f'{datetime.datetime.now()} - found {len(all_tags_set)} tags - {all_tags_set}')
+    print(datetime.datetime.now(),' - found ', len(all_tags_set),' tags - ', all_tags_set)
 
     return sentences_int, w2i, int2word, tag2int, int2tag
 
@@ -744,7 +744,7 @@ def parse_test_set(filename, n=None):
     '''
     sentences = []
     f_text = None
-    print(f'{datetime.datetime.now()} - loading data from file {filename}')
+    print(datetime.datetime.now(),' - loading data from file ', filename)
     with open(filename) as f:
         if n is not None:
             f_text = [next(f) for _ in range(n)]
@@ -769,16 +769,16 @@ def evaluate(model, testset_file, n_samples=1, max_words=None):
         comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
         accuracy.append(sum(comparison) / len(comparison))
         tagged_sentence = ['{}_{}'.format(sentence.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
-        print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
-    print(f'average accuracy: {"{0:.2f}".format(np.mean(accuracy))}')
+    print('results: time - ', "{0:.2f}".format(inference_time), '[sec], tags - ', " ".join(tagged_sentence))
+    print('average accuracy: ', "{0:.2f}".format(np.mean(accuracy)))
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag')
+    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag',n=1000)
 
     my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t)
     train_time = my_model.train_model()
-    print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
+    print('train: time - ', "{0:.2f}".format(train_time), '[sec]')
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(my_model.parameter_vector, f)
     # f = open('model_prm.pkl', 'rb')
@@ -787,7 +787,7 @@ if __name__ == "__main__":
 
 
 
-    evaluate(my_model, 'train.wtag', max_words=10)
+    evaluate(my_model, 'train.wtag', n_samples=5, max_words=20)
 
     # Evaluate test set:
-    evaluate(my_model, 'test.wtag', 1, 5)
+    evaluate(my_model, 'test.wtag', n_samples=5, max_words=20)
