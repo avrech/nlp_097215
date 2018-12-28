@@ -43,7 +43,7 @@ class Context:
 class MEMM:
     BEAM_MIN = 10
 
-    def __init__(self, sentences, w2i, i2w, t2i, i2t, l2=0.1, verbose=1, beam_search=2):
+    def __init__(self, sentences, w2i, i2w, t2i, i2t, l2=0.1, verbose=1):
         '''
 
         :param sentences: The whole corpus in integer representation.
@@ -102,7 +102,7 @@ class MEMM:
         self.get_features()
         self.training_features = [None] * len(self.sentences)
         self.softmax_dict = {} # for inference
-        self.beam_search = beam_search
+
     @staticmethod
     def safe_add(curr_dict, key):
         curr_dict[key] = curr_dict.get(key, 0) + 1
@@ -538,7 +538,7 @@ class MEMM:
         result_tags_str = [self.i2t[i] for i in result_tags]
         return result_tags_str, infer_time
 
-    def infer_viterbi_beam_search(self, sentence_str):
+    def infer_viterbi_beam_search(self, sentence_str, beam=5):
         t_start = time.time()
         parsed_sentence_str = [word.rstrip() for word in sentence_str.split(' ')]
         sentence = [self.w2i(w) for w in parsed_sentence_str]
@@ -588,7 +588,7 @@ class MEMM:
 
             # pi_items = temp_pi.items()
             # best_candidates = np.array([p for key, p in pi_items]).argsort()[::-1][:self.beam_search]
-            best_candidates = np.array([p for key, p in wuv_probs.items()]).argsort()[::-1][:self.beam_search]
+            best_candidates = np.array([p for key, p in wuv_probs.items()]).argsort()[::-1][:beam]
             best_transitions = []
             for idx, ((w,u,v), prob) in enumerate(wuv_probs.items()):
                 if idx in best_candidates:
@@ -884,7 +884,7 @@ def evaluate(model, testset_file, n_samples=1, max_words=None, version='avrech')
             nw = min(len(sample), max_words)
         sentence = ' '.join([word_id[0] for word_id in sample[:nw]])
         if version == 'avrech':
-            results_tag, inference_time = model.infer_viterbi_beam_search(sentence)
+            results_tag, inference_time = model.infer_viterbi_beam_search(sentence, beam=10)
         else:
             results_tag, inference_time = model.infer(sentence)
 
@@ -898,8 +898,12 @@ def evaluate(model, testset_file, n_samples=1, max_words=None, version='avrech')
 if __name__ == "__main__":
     # load training set
     parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag', n=100)
+    load_model_params = False
+    if load_model_params:
+        f = open('model_prm.pkl', 'rb')
+        param_vector = pickle.load(f)
 
-    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t, beam_search=3)
+    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t)
     train_time = my_model.train_model()
     print('train: time - ', "{0:.2f}".format(train_time), '[sec]')
     with open('model_prm.pkl', 'wb') as f:
