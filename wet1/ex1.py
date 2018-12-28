@@ -42,18 +42,32 @@ class Context:
 
 class MEMM:
     BEAM_MIN = 10
+    WORD_UNIGRAMS = 'WORD_UNIGRAMS'
+    WORD_BIGRAMS = 'WORD_BIGRAMS'
+    WORD_TRIGRAMS = 'WORD_TRIGRAMS'
+    TAG_UNIGRAMS = 'TAG_UNIGRAMS'
+    TAG_BIGRAMS = 'TAG_BIGRAMS'
+    TAG_TRIGRAMS = 'TAG_TRIGRAMS'
+    WORD_TAG_PAIRS = 'WORD_TAG_PAIRS'
+    PREFIX_TAG = 'PREFIX_TAG'
+    SUFFIX_TAG = 'SUFFIX_TAG'
+    CAPITAL_FIRST_LETTER_TAG = 'CAPITAL_FIRST_LETTER_TAG'
+    CAPITAL_WORD_TAG = 'CAPITAL_WORD_TAG'
+    NUMBER_TAG = 'NUMBER_TAG'
+    FIRST_WORD_TAG = 'FIRST_WORD_TAG'
+    SECOND_WORD_TAG = 'SECOND_WORD_TAG'
+    LAST_WORD_TAG = 'LAST_WORD_TAG'
 
     def __init__(self):
         self.tags = []
         self.enriched_tags = []
-        self.feature_set = []
-        self.feature_set1 = []
+        self.feature_set = {}
+        self.num_features = 0
         self.word_vectors = None
         self.sentences = None
         self.parameter_vector = None
         self.empirical_counts = None
         self.word_positive_indices = None
-        self.use_vector_form = True
         self.l_counter = self.l_grad_counter = 0
         self.safe_softmax = True
         self.verbose = 1
@@ -119,7 +133,7 @@ class MEMM:
                     self.safe_add(capital_first_letter_tag, tag)
                 if all([letter.isupper() for letter in word]):
                     self.safe_add(capital_word_tag, tag)
-                if word.replace('.','',1).isdigit():
+                if word.replace('.', '', 1).isdigit():
                     self.safe_add(number_tag, tag)
 
                 if i == 1:
@@ -129,22 +143,28 @@ class MEMM:
                 if i == len(sentence) - 1:
                     self.safe_add(last_word_tag, tag)
 
-        return {'word_count': word_unigrams_counts,
-                'tag_count': tag_unigrams_counts,
-                'word_tag_pairs': word_tag_counts,
-                'word_bigrams': word_bigrams_counts,
-                'tag_bigrams': tag_bigrams_counts,
-                'word_trigrams': word_trigrams_counts,
-                'tag_trigrams': tag_trigrams_counts,
-                'prefix_tag': prefix_tag_counter,
-                'suffix_tag': suffix_tag_counter,
-                'capital_first_letter_tag': capital_first_letter_tag,
-                'capital_word_tag': capital_word_tag,
-                'number_tag': number_tag,
-                'first_word_tag': first_word_tag,
-                'second_word_tag': second_word_tag,
-                'last_word_tag': last_word_tag,
+        return {self.WORD_UNIGRAMS: word_unigrams_counts,
+                self.TAG_UNIGRAMS: tag_unigrams_counts,
+                self.WORD_TAG_PAIRS: word_tag_counts,
+                self.WORD_BIGRAMS: word_bigrams_counts,
+                self.TAG_BIGRAMS: tag_bigrams_counts,
+                self.WORD_TRIGRAMS: word_trigrams_counts,
+                self.TAG_TRIGRAMS: tag_trigrams_counts,
+                self.PREFIX_TAG: prefix_tag_counter,
+                self.SUFFIX_TAG: suffix_tag_counter,
+                self.CAPITAL_FIRST_LETTER_TAG: capital_first_letter_tag,
+                self.CAPITAL_WORD_TAG: capital_word_tag,
+                self.NUMBER_TAG: number_tag,
+                self.FIRST_WORD_TAG: first_word_tag,
+                self.SECOND_WORD_TAG: second_word_tag,
+                self.LAST_WORD_TAG: last_word_tag,
                 }
+
+    def add_features_subset(self, features_dict, dict_name, start_index):
+        index_list = list(features_dict[dict_name].keys())
+        self.feature_set[dict_name] = {key: index_list.index(key) + start_index for key in index_list}
+        start_index += len(index_list)
+        return start_index
 
     def train_model(self, sentences, param_vec=None):
         t_start = time.time()
@@ -154,89 +174,69 @@ class MEMM:
         text_stats = self.get_text_statistics()
 
         print('{} - preparing features'.format(datetime.datetime.now()))
-        self.tags = list(text_stats['tag_count'].keys())
+        self.tags = list(text_stats[self.TAG_UNIGRAMS].keys())
         self.enriched_tags = [None] + self.tags
 
         # define the features set
+        start_index = 0
         # feature-word pairs in dataset (#100)
-        self.feature_set += [(lambda w, t:(lambda cntx: 1 if cntx.word == w and cntx.tag == t else 0))(w, t)
-                             for w, t in text_stats['word_tag_pairs'].keys()]
+        start_index = self.add_features_subset(text_stats, self.WORD_TAG_PAIRS, start_index)
         # suffixes <= 4 and tag pairs in dataset (#101)
-        self.feature_set += [(lambda suff, t: (lambda cntx: 1 if cntx.word.endswith(suff) and
-                                                                 cntx.tag == t else 0))(suff, t)
-                             for suff, t in text_stats['suffix_tag'].keys()]
+        start_index = self.add_features_subset(text_stats, self.SUFFIX_TAG, start_index)
         # prefixes <= 4 and tag pairs in dataset (#102)
-        self.feature_set += [(lambda pref, t: (lambda cntx: 1 if cntx.word.startswith(pref) and
-                                                                 cntx.tag == t else 0))(pref, t)
-                             for pref, t in text_stats['prefix_tag'].keys()]
+        start_index = self.add_features_subset(text_stats, self.PREFIX_TAG, start_index)
         # tag trigrams in datset (#103)
-        self.feature_set += [(lambda prev_prev_tag, prev_tag, tag:
-                              (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag
-                                                 and cntx.prev_prev_tag == prev_prev_tag else 0))
-                             (prev_prev_tag, prev_tag, tag)
-                             for prev_prev_tag, prev_tag, tag in text_stats['tag_trigrams'].keys()]
+        start_index = self.add_features_subset(text_stats, self.TAG_TRIGRAMS, start_index)
         # tag bigrams in datset (#104)
-        self.feature_set += [(lambda prev_tag, tag:
-                              (lambda cntx: 1 if cntx.tag == tag and cntx.prev_tag == prev_tag else 0))(prev_tag, tag)
-                             for prev_tag, tag in text_stats['tag_bigrams'].keys()]
+        start_index = self.add_features_subset(text_stats, self.TAG_BIGRAMS, start_index)
         # tag unigrams in datset (#105)
-        self.feature_set += [(lambda tag: (lambda cntx: 1 if cntx.tag == tag else 0))(tag) for tag in self.tags]
+        start_index = self.add_features_subset(text_stats, self.TAG_UNIGRAMS, start_index)
 
-        # capital first letter tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
-                             for t in text_stats['capital_first_letter_tag'].keys()]
-        # capital word tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in cntx.word])
-                                                           and cntx.tag == t else 0))(t)
-                             for t in text_stats['capital_word_tag'].keys()]
-        # number tag feature
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word.replace('.','',1).isdigit()
-                                                           and cntx.tag == t else 0))(t)
-                             for t in text_stats['number_tag'].keys()]
+        self.num_features = start_index
 
-        # first word in sentence tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
-                             for t in text_stats['first_word_tag'].keys()]
-
-        # second word in sentence tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
-                             for t in text_stats['second_word_tag'].keys()]
-
-        # last word in sentence tag
-        self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
-                             for t in text_stats['last_word_tag'].keys()]
+        # # capital first letter tag
+        # self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word[0].isupper() and cntx.tag == t else 0))(t)
+        #                      for t in text_stats['capital_first_letter_tag'].keys()]
+        # # capital word tag
+        # self.feature_set += [(lambda t: (lambda cntx: 1 if all([letter.isupper() for letter in cntx.word])
+        #                                                    and cntx.tag == t else 0))(t)
+        #                      for t in text_stats['capital_word_tag'].keys()]
+        # # number tag feature
+        # self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.word.replace('.','',1).isdigit()
+        #                                                    and cntx.tag == t else 0))(t)
+        #                      for t in text_stats['number_tag'].keys()]
+        #
+        # # first word in sentence tag
+        # self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        #                      for t in text_stats['first_word_tag'].keys()]
+        #
+        # # second word in sentence tag
+        # self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        #                      for t in text_stats['second_word_tag'].keys()]
+        #
+        # # last word in sentence tag
+        # self.feature_set += [(lambda t: (lambda cntx: 1 if cntx.index == 0 and cntx.tag == t else 0))(t)
+        #                      for t in text_stats['last_word_tag'].keys()]
 
         # previous word + current tag pairs
         # next word + current tag pairs
 
-        # for each word in the corpus, find its feature vector
-        word_vectors = []
+        # for each word in the corpus, find its feature vector (only positive indices)
         word_positive_indices = {}
+        contexts_dict = {}
         for sentence in sentences:
             for i in range(len(sentence)):
                 context = Context.get_context_tagged(sentence, i)
-                if self.use_vector_form:
-                    vector = self.get_feature_vector_for_context(context)
-                    word_vectors.append(vector)
-                else:
-                    positive_indices = self.get_positive_features_for_context(context)
-                    word_positive_indices[(sentence, i)] = positive_indices
-        if self.use_vector_form:
-            self.word_vectors = np.array(word_vectors)
-            self.empirical_counts = np.sum(self.word_vectors, axis=0)
-        else:
-            self.word_positive_indices = word_positive_indices
-            self.empirical_counts = self.get_empirical_counts_from_dict()
+                positive_indices = self.get_positive_features_for_context(context)
+                word_positive_indices[(sentence, i)] = positive_indices
+                contexts_dict[(sentence, i)] = context
+        self.word_positive_indices = word_positive_indices
+        self.empirical_counts = self.get_empirical_counts_from_dict()
 
         # calculate the parameters vector
         print(f'{datetime.datetime.now()} - finding parameter vector')
         if param_vec is None:
-            if self.use_vector_form:
-                param_vec = scipy.optimize.minimize(fun=self.l_vector, x0=np.ones(len(self.feature_set)),
-                                                    method='L-BFGS-B', jac=self.grad_l_vector,
-                                                    options={'maxiter': 17, 'maxfun': 20})
-            else:
-                param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(len(self.feature_set)), method='L-BFGS-B',
+                param_vec = scipy.optimize.minimize(fun=self.l, x0=np.ones(self.num_features), method='L-BFGS-B',
                                                     jac=self.grad_l, options={'maxiter': 17, 'maxfun': 20})
         self.parameter_vector = param_vec.x
         print(self.parameter_vector)
@@ -245,7 +245,8 @@ class MEMM:
 
     # use Viterbi to infer tags for the target sentence
     def infer(self, sentence):
-        print(f'{datetime.datetime.now()} - predict for {sentence}')
+        print(f'{datetime.datetime.now()} - predict for:')
+        print(sentence)
         t_start = time.time()
         parsed_sentence = [word.rstrip() for word in sentence.split(' ')]
         pi = {(0, None, None): 1}
@@ -307,16 +308,28 @@ class MEMM:
         infer_time = time.time() - t_start
         return result_tags, infer_time
 
-    def get_feature_vector_for_context(self, context):
-        vector = [feature(context) for feature in self.feature_set]
+    def get_feature_vector_for_context(self, positive_features):
+        vector = np.zeros(self.num_features)
+        vector[positive_features] += 1
         return vector
 
     def get_positive_features_for_context(self, context):
-        vector = [feature(context) for feature in self.feature_set]
-        return [vector.index(v) for v in vector if v != 0]
+        positive_indices = []
+        positive_indices.append(self.feature_set[self.WORD_TAG_PAIRS].get((context.word, context.tag), None))
+        for i in range(min(4, len(context.word) - 1)):
+            positive_indices.append(self.feature_set[self.SUFFIX_TAG].get((context.word[-i-1:], context.tag), None))
+        for i in range(min(4, len(context.word))):
+            positive_indices.append(self.feature_set[self.PREFIX_TAG].get((context.word[:i+1], context.tag), None))
+        positive_indices.append(
+            self.feature_set[self.TAG_TRIGRAMS].get((context.prev_prev_tag, context.prev_tag, context.tag), None))
+        positive_indices.append(self.feature_set[self.TAG_BIGRAMS].get((context.prev_tag, context.tag), None))
+        positive_indices.append(self.feature_set[self.TAG_UNIGRAMS].get(context.tag, None))
+
+        positive_indices = [x for x in positive_indices if x]
+        return positive_indices
 
     def get_empirical_counts_from_dict(self):
-        emprical_counts = np.zeros(len(self.feature_set))
+        emprical_counts = np.zeros(self.num_features)
         for positive_features in self.word_positive_indices.values():
             emprical_counts[positive_features] += 1
         return emprical_counts
@@ -327,16 +340,15 @@ class MEMM:
 
     @staticmethod
     def get_dot_product_from_positive_features(positive_indices, v):
-        dot_product = 0
-        for positive_index in positive_indices:
-            dot_product += v[positive_index]
+        dot_product = sum(v[positive_indices])
         return dot_product
 
     # soft max
     def get_tag_proba(self, tag, context, norm=None):
         context.tag = tag
-        tag_vector = self.get_feature_vector_for_context(context)
-        numerator = 2 ** self.get_dot_product(tag_vector)
+        positive_features = self.get_positive_features_for_context(context)
+        dot_product = self.get_dot_product_from_positive_features(positive_features, self.parameter_vector)
+        numerator = 2 ** dot_product
         if norm is None:
             norm = self.get_context_norm(context)
         proba = numerator / norm if norm > 0 else 0
@@ -346,8 +358,9 @@ class MEMM:
         norm = 0
         for curr_tag in self.tags:
             context.tag = curr_tag
-            tag_vector = self.get_feature_vector_for_context(context)
-            norm += 2 ** self.get_dot_product(tag_vector)
+            positive_features = self.get_positive_features_for_context(context)
+            dot_product = self.get_dot_product_from_positive_features(positive_features, self.parameter_vector)
+            norm += 2 ** dot_product
         return norm
 
     def log(self, msg):
@@ -365,42 +378,12 @@ class MEMM:
                 proba += self.get_dot_product_from_positive_features(self.word_positive_indices[(sentence, i)], v)
                 curr_context = Context.get_context_tagged(sentence, i)
                 curr_exp = 0
-                if False:  # self.safe_softmax:
-                    dot_products = []
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        # vector = self.get_feature_vector_for_context(curr_context)
-                        positive_features = self.get_positive_features_for_context(curr_context)
-                        dot_products.append(self.get_dot_product_from_positive_features(positive_features, v))
-                    dot_products = np.array(dot_products) - max(dot_products)
-                    for val in dot_products:
-                        curr_exp += 2 ** val
-                else:
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        # vector = self.get_feature_vector_for_context(curr_context)
-                        positive_features = self.get_positive_features_for_context(curr_context)
-                        curr_exp += 2 ** self.get_dot_product_from_positive_features(positive_features, v)
-                norm_part += math.log(curr_exp, 2)
-        res = proba - norm_part
-        self.log(f'l = {self.l_counter},{res}')
-        self.l_counter += 1
-        return -res
 
-    # the ML estimate maximization function
-    def l_vector(self, v):
-        # proba part
-        proba = sum(np.dot(self.word_vectors, v))
-        # normalization part
-        norm_part = 0
-        for sentence in self.sentences:
-            for i in range(len(sentence)):
-                curr_context = Context.get_context_tagged(sentence, i)
-                curr_exp = 0
                 for tag in self.tags:
                     curr_context.tag = tag
-                    vector = self.get_feature_vector_for_context(curr_context)
-                    curr_exp += 2 ** np.dot(v, vector)
+                    # vector = self.get_feature_vector_for_context(curr_context)
+                    positive_features = self.get_positive_features_for_context(curr_context)
+                    curr_exp += 2 ** self.get_dot_product_from_positive_features(positive_features, v)
                 norm_part += math.log(curr_exp, 2)
         res = proba - norm_part
         self.log(f'l = {self.l_counter},{res}')
@@ -414,55 +397,32 @@ class MEMM:
             for i in range(len(sentence)):
                 curr_context = Context.get_context_tagged(sentence, i)
                 normalization = 0
-                nominator = 0
+                numerator = 0
                 if self.safe_softmax:
                     dot_products = []
                     vectors = []
                     # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
                     for tag in self.tags:
                         curr_context.tag = tag
-                        vector = self.get_feature_vector_for_context(curr_context)
+                        curr_positive_features = self.get_positive_features_for_context(curr_context)
+                        vector = self.get_feature_vector_for_context(curr_positive_features)
                         vectors.append(vector)
-                        curr_positive_features = self.word_positive_indices[(sentence, i)]
                         dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
                     dot_products = np.array(dot_products) - max(dot_products)
                     for j, product in enumerate(dot_products):
                         curr_exp = 2 ** product
                         normalization += curr_exp
-                        nominator += np.multiply(vectors[j], curr_exp)
-                else:
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        vector = self.get_feature_vector_for_context(curr_context)
-                        curr_positive_features = self.word_positive_indices[(sentence, i)]
-                        curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
-                        normalization += curr_exp
-                        nominator += np.multiply(vector, curr_exp)
+                        numerator += np.multiply(vectors[j], curr_exp)
+                # else:
+                #     for tag in self.tags:
+                #         curr_context.tag = tag
+                #         vector = self.get_feature_vector_for_context(curr_context)
+                #         curr_positive_features = self.word_positive_indices[(sentence, i)]
+                #         curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
+                #         normalization += curr_exp
+                #         numerator += np.multiply(vector, curr_exp)
 
-                expected_counts += nominator / normalization if normalization > 0 else 0
-        res = self.empirical_counts - expected_counts
-        self.log(f'grad = {self.l_grad_counter}')
-        self.l_grad_counter += 1
-        return -res
-
-    def grad_l_vector(self, v):
-        self.log(f'grad = {self.l_grad_counter}')
-        self.l_grad_counter += 1
-        # expected counts
-        expected_counts = 0
-        for sentence in self.sentences:
-            for i in range(len(sentence)):
-                curr_context = Context.get_context_tagged(sentence, i)
-                normalization = 0
-                nominator = 0
-                for tag in self.tags:
-                    curr_context.tag = tag
-                    vector = self.get_feature_vector_for_context(curr_context)
-                    curr_exp = 2 ** np.dot(v, vector)
-                    normalization += curr_exp
-                    nominator += np.multiply(vector, curr_exp)
-
-                expected_counts += nominator / normalization if normalization > 0 else 0
+                expected_counts += numerator / normalization if normalization > 0 else 0
         res = self.empirical_counts - expected_counts
         self.log(f'grad = {self.l_grad_counter}')
         self.l_grad_counter += 1
@@ -506,7 +466,11 @@ def evaluate(model, testset_file, n_samples, max_words=None):
         sentence = ' '.join([word[0] for word in sample[:max_words]])
         results_tag, inference_time = model.infer(sentence)
         predictions.append(results_tag)
-        comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
+        if max_words:
+            comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
+        else:
+            comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(len(sample))]
+
         accuracy.append(sum(comparison) / len(comparison))
         tagged_sentence = ['{}_{}'.format(sentence.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
         print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
@@ -516,7 +480,7 @@ if __name__ == "__main__":
     # load training set
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
     my_model = MEMM()
-    train_time = my_model.train_model(parsed_sentences[:20])
+    train_time = my_model.train_model(parsed_sentences[:100])
     print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
     with open('model_prm.pkl', 'wb') as f:
         pickle.dump(my_model.parameter_vector, f)
@@ -530,7 +494,7 @@ if __name__ == "__main__":
     # # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
     # print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence1)}')
 
-    evaluate(my_model, 'train.wtag', 1, 5)
+    evaluate(my_model, 'train.wtag', 3)
 
     # Evaluate test set:
-    evaluate(my_model, 'test.wtag', 1, 5)
+    evaluate(my_model, 'test.wtag', 3)
