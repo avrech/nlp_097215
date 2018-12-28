@@ -43,7 +43,7 @@ class Context:
 class MEMM:
     BEAM_MIN = 10
 
-    def __init__(self, sentences, w2i, i2w, t2i, i2t, l2=0.1, verbose=1):
+    def __init__(self, sentences, w2i, i2w, t2i, i2t, l2=0.1, verbose=1, beam_search=2):
         '''
 
         :param sentences: The whole corpus in integer representation.
@@ -101,7 +101,8 @@ class MEMM:
 
         self.get_features()
         self.training_features = [None] * len(self.sentences)
-
+        self.softmax_dict = {} # for inference
+        self.beam_search = beam_search
     @staticmethod
     def safe_add(curr_dict, key):
         curr_dict[key] = curr_dict.get(key, 0) + 1
@@ -537,6 +538,117 @@ class MEMM:
         result_tags_str = [self.i2t[i] for i in result_tags]
         return result_tags_str, infer_time
 
+    def infer_viterbi_beam_search(self, sentence_str):
+        t_start = time.time()
+        parsed_sentence_str = [word.rstrip() for word in sentence_str.split(' ')]
+        sentence = [self.w2i(w) for w in parsed_sentence_str]
+        pi = {(-1, None, None): 1}
+        bp = {}
+        N = len(sentence)
+        S = {idx: self.tags for idx in np.arange(N)}
+        S[-2] = [None]
+        S[-1] = [(None, None)]  # limited group of candidates for beam-search
+        for k in range(N):
+            # temp_pi = {}
+            # temp_bp = {}
+            cur_cntx = Context.get_context_untagged(sentence, k, None, None, None)
+            self.softmax_dict = {}
+            wuv_probs = {}
+            for (w, u) in S[k-1]:
+                cur_cntx.prev_tag = u
+                cur_cntx.prev_prev_tag = w
+                norm = self.get_norm_expmax((w, u, 0), cur_cntx)
+
+                for v in S[k]:
+                    # calculate arg/max upon w of
+                    # pi[(k-1,w,u)] *
+                    # prob of word k to get tag v given context of word k in sentence
+                    cur_cntx.tag = v
+                    wuv_prob = self.get_tag_proba(v, cur_cntx, norm) * pi[(k - 1, w, u)]  # max term
+                    # best_prob = 0
+                    # best_w = None
+                    # for w in [w for (w, u) in S[k-1]]:
+                    #     cur_cntx.prev_prev_tag = w
+                    #     w_prob = self.get_tag_proba(v, cur_cntx, norm)*pi[(k-1, w, u)] # max term
+                    #     if w_prob > best_prob:
+                    #         best_prob = w_prob
+                    #         best_w = w
+
+                    # best_idx = np.array(w_probs).argmax()
+                    wuv_probs[(w, u, v)] = wuv_prob
+
+                    # temp_pi[(k, u, v)] = best_prob # w_probs[best_idx]
+                    # temp_bp[(k, u, v)] = best_w # S[k-2][best_idx]
+
+            '''
+            Beam-search selection:
+            Select at each stage the B best tags for the sentence k'th word.
+            Discard all others. Store the selected transitions S[k] = (u,v) for 3 best transitions. 
+            '''
+
+            # pi_items = temp_pi.items()
+            # best_candidates = np.array([p for key, p in pi_items]).argsort()[::-1][:self.beam_search]
+            best_candidates = np.array([p for key, p in wuv_probs.items()]).argsort()[::-1][:self.beam_search]
+            best_transitions = []
+            for idx, ((w,u,v), prob) in enumerate(wuv_probs.items()):
+                if idx in best_candidates:
+                    pi[(k, u, v)] = prob
+                    bp[(k, u, v)] = w
+                    best_transitions.append((u,v))
+            S[k] = best_transitions
+
+            # S[k] = [key[-1] for (idx, (key, val)) in enumerate(pi_items) if idx in best_candidates]
+        # finish calculate pi, and bp.
+        # start decoding:
+        best_prob = 0
+        y = [None] * N
+        for (n, u, v), p in pi.items():
+            if n == N-1:
+                # probability of tagging word n-1 by u:
+                w = bp[(n, u, v)]
+                wbp = bp[(n-1,w,u)]
+                u_cntx = Context.get_context_untagged(sentence, n-1, u, wbp, w)
+                u_norm = self.get_norm_expmax((wbp, w, u), u_cntx)
+                u_prob = self.get_tag_proba(u, u_cntx, norm=u_norm)
+                v_cntx = Context.get_context_untagged(sentence, n, v, w, u)
+                v_norm = self.get_norm_expmax((w, u, v), v_cntx)
+                v_prob = self.get_tag_proba(v, v_cntx, norm=v_norm)
+                total_prob = p * u_prob * v_prob
+                if total_prob > best_prob:
+                    y[-2] = u
+                    y[-1] = v
+
+        for k in range(N-2).__reversed__():
+            y[k] = bp[(k+2, y[k+1], y[k+2])]
+
+        infer_time = time.time() - t_start
+        result_tags_str = [self.i2t[i] for i in y]
+        return result_tags_str, infer_time
+
+
+
+
+
+
+
+
+    def get_probs_for_ppt(self, ppt_candidates, context):
+        '''
+        Calculate softmax upon candidates for prev_prev_tag
+        :param candidates_tags:
+        :param context:
+        :return:
+        '''
+
+    def get_norm_expmax(self, key, context):
+        if key in self.softmax_dict.keys():
+            return self.softmax_dict[key]
+        else:
+            norm, expmax = self.get_context_norm_and_expmax(context)
+            self.softmax_dict[key] = (norm, expmax)
+            return norm, expmax
+
+
     def get_feature_vector_for_context(self, context):
         vector = [feature(context) for feature in self.feature_set]
         return vector
@@ -760,18 +872,22 @@ def parse_test_set(filename, n=None):
         sentences.append(words_and_tags)
     return sentences
 
-def evaluate(model, testset_file, n_samples=1, max_words=None):
+def evaluate(model, testset_file, n_samples=1, max_words=None, version='avrech'):
     parsed_testset = parse_test_set(testset_file, n=n_samples) # TODO: use trainset dictionary for test set.
     predictions = []
     accuracy = []
-
+    print(' ---------',version,'---------- ')
     for s_idx, sample in enumerate(parsed_testset):
         if max_words is None:
             nw = len(sample)
         else:
             nw = min(len(sample), max_words)
         sentence = ' '.join([word_id[0] for word_id in sample[:nw]])
-        results_tag, inference_time = model.infer(sentence)
+        if version == 'avrech':
+            results_tag, inference_time = model.infer_viterbi_beam_search(sentence)
+        else:
+            results_tag, inference_time = model.infer(sentence)
+
         predictions.append(results_tag)
         comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(nw)]
         accuracy.append(sum(comparison) / len(comparison))
@@ -781,9 +897,9 @@ def evaluate(model, testset_file, n_samples=1, max_words=None):
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag',n=100)
+    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag', n=100)
 
-    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t)
+    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t, beam_search=3)
     train_time = my_model.train_model()
     print('train: time - ', "{0:.2f}".format(train_time), '[sec]')
     with open('model_prm.pkl', 'wb') as f:
@@ -794,7 +910,7 @@ if __name__ == "__main__":
 
 
 
-    evaluate(my_model, 'train.wtag', n_samples=5, max_words=20)
+    evaluate(my_model, 'train.wtag', n_samples=1, version='old')
 
     # Evaluate test set:
-    evaluate(my_model, 'test.wtag', n_samples=5, max_words=20)
+    evaluate(my_model, 'train.wtag', n_samples=1, version='avrech')
