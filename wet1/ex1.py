@@ -431,21 +431,21 @@ class MEMM:
             for i in range(len(sentence)):
                 curr_context = Context.get_context_tagged(sentence, i)
                 normalization = 0
-                numerator = 0
+                numerator = np.zeros(self.num_features)
                 dot_products = []
                 vectors = []
                 # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
                 for tag in self.tags:
                     curr_context.tag = tag
                     curr_positive_features = self.get_positive_features_for_context(curr_context)
-                    vector = self.get_feature_vector_for_context(curr_positive_features)
-                    vectors.append(vector)
+                    # vector = self.get_feature_vector_for_context(curr_positive_features)
+                    vectors.append(curr_positive_features)
                     dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
                 dot_products = np.array(dot_products) - max(dot_products)
                 for j, product in enumerate(dot_products):
                     curr_exp = np.exp(product)
                     normalization += curr_exp
-                    numerator += np.multiply(vectors[j], curr_exp)
+                    numerator[vectors[j]] += curr_exp
 
                 expected_counts += numerator / normalization if normalization > 0 else 0
         res = self.empirical_counts - expected_counts
