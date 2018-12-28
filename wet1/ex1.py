@@ -7,6 +7,8 @@ from scipy import optimize
 import pickle
 import time
 
+from tqdm import tqdm
+
 
 class Context:
     def __init__(self, word, tag, history, prev_tag, prev_prev_tag, next_word):
@@ -380,7 +382,7 @@ class MEMM:
         context.tag = tag
         positive_features = self.get_positive_features_for_context(context)
         dot_product = self.get_dot_product_from_positive_features(positive_features, self.parameter_vector)
-        numerator = 2 ** dot_product
+        numerator = np.exp(dot_product)
         if norm is None:
             norm = self.get_context_norm(context)
         proba = numerator / norm if norm > 0 else 0
@@ -392,7 +394,7 @@ class MEMM:
             context.tag = curr_tag
             positive_features = self.get_positive_features_for_context(context)
             dot_product = self.get_dot_product_from_positive_features(positive_features, self.parameter_vector)
-            norm += 2 ** dot_product
+            norm += np.exp(dot_product)
         return norm
 
     def log(self, msg):
@@ -405,7 +407,7 @@ class MEMM:
         proba = 0
         # normalization part
         norm_part = 0
-        for sentence in self.sentences:
+        for sentence in tqdm(self.sentences, 'l sentences'):
             for i in range(len(sentence)):
                 proba += self.get_dot_product_from_positive_features(self.word_positive_indices[(sentence, i)], v)
                 curr_context = Context.get_context_tagged(sentence, i)
@@ -415,8 +417,8 @@ class MEMM:
                     curr_context.tag = tag
                     # vector = self.get_feature_vector_for_context(curr_context)
                     positive_features = self.get_positive_features_for_context(curr_context)
-                    curr_exp += 2 ** self.get_dot_product_from_positive_features(positive_features, v)
-                norm_part += math.log(curr_exp, 2)
+                    curr_exp += np.exp(self.get_dot_product_from_positive_features(positive_features, v))
+                norm_part += np.log(curr_exp)
         res = proba - norm_part
         self.log(f'{datetime.datetime.now()} - l = {self.l_counter},{res}')
         self.l_counter += 1
@@ -425,34 +427,25 @@ class MEMM:
     def grad_l(self, v):
         # expected counts
         expected_counts = 0
-        for sentence in self.sentences:
+        for sentence in tqdm(self.sentences, 'grad l sentences'):
             for i in range(len(sentence)):
                 curr_context = Context.get_context_tagged(sentence, i)
                 normalization = 0
                 numerator = 0
-                if self.safe_softmax:
-                    dot_products = []
-                    vectors = []
-                    # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
-                    for tag in self.tags:
-                        curr_context.tag = tag
-                        curr_positive_features = self.get_positive_features_for_context(curr_context)
-                        vector = self.get_feature_vector_for_context(curr_positive_features)
-                        vectors.append(vector)
-                        dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
-                    dot_products = np.array(dot_products) - max(dot_products)
-                    for j, product in enumerate(dot_products):
-                        curr_exp = 2 ** product
-                        normalization += curr_exp
-                        numerator += np.multiply(vectors[j], curr_exp)
-                # else:
-                #     for tag in self.tags:
-                #         curr_context.tag = tag
-                #         vector = self.get_feature_vector_for_context(curr_context)
-                #         curr_positive_features = self.word_positive_indices[(sentence, i)]
-                #         curr_exp = 2 ** self.get_dot_product_from_positive_features(curr_positive_features, v)
-                #         normalization += curr_exp
-                #         numerator += np.multiply(vector, curr_exp)
+                dot_products = []
+                vectors = []
+                # safe softmax: first calculate all dot products, then deduce the max val to avoid overflow
+                for tag in self.tags:
+                    curr_context.tag = tag
+                    curr_positive_features = self.get_positive_features_for_context(curr_context)
+                    vector = self.get_feature_vector_for_context(curr_positive_features)
+                    vectors.append(vector)
+                    dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
+                dot_products = np.array(dot_products) - max(dot_products)
+                for j, product in enumerate(dot_products):
+                    curr_exp = np.exp(product)
+                    normalization += curr_exp
+                    numerator += np.multiply(vectors[j], curr_exp)
 
                 expected_counts += numerator / normalization if normalization > 0 else 0
         res = self.empirical_counts - expected_counts
