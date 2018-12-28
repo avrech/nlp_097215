@@ -897,24 +897,35 @@ def evaluate(model, testset_file, n_samples=1, max_words=None, version='avrech')
 
 if __name__ == "__main__":
     # load training set
-    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag', n=100)
+    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag')
+    my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t)
+    train_time = my_model.train_model()
+    print('train: time - ', "{0:.2f}".format(train_time), '[sec]')
+    with open(datetime.datetime.now()+'full_model_prm.pkl', 'wb') as f:
+        pickle.dump(my_model.parameter_vector, f)
+    # f = open('model_prm.pkl', 'rb')
+    # param_vector = pickle.load(f)
+    # model.test('bla', annotated=True)
     load_model_params = False
     if load_model_params:
         f = open('model_prm.pkl', 'rb')
         param_vector = pickle.load(f)
 
+    evaluate(my_model, 'train.wtag', n_samples=10, version='old')
+
+    # Evaluate test set:
+    evaluate(my_model, 'train.wtag', n_samples=10, version='avrech')
+
+
+
+    parsed_sentences, w2i, i2w, t2i, i2t = get_parsed_sentences_from_tagged_file('train.wtag', n=1000)
     my_model = MEMM(parsed_sentences, w2i, i2w, t2i, i2t)
     train_time = my_model.train_model()
     print('train: time - ', "{0:.2f}".format(train_time), '[sec]')
-    with open('model_prm.pkl', 'wb') as f:
+    with open(datetime.datetime.now() + 'full_model_prm.pkl', 'wb') as f:
         pickle.dump(my_model.parameter_vector, f)
-    # f = open('model_prm.pkl', 'rb')
-    # param_vector = pickle.load(f)
-    # model.test('bla', annotated=True)
 
-
-
-    evaluate(my_model, 'train.wtag', n_samples=1, version='old')
+    evaluate(my_model, 'train.wtag', n_samples=10, version='old')
 
     # Evaluate test set:
-    evaluate(my_model, 'train.wtag', n_samples=1, version='avrech')
+    evaluate(my_model, 'train.wtag', n_samples=10, version='avrech')
