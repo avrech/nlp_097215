@@ -517,7 +517,7 @@ def evaluate(model, testset_file, n_samples=None):
         sentence_accuracy.append(sum(comparison) / len(comparison))
         tagged_sentence = ' '.join(['{}_{}'.format(sentence[i][0], results_tag[i]) for i in range(len(results_tag))])
         predicted_sentences.append(tagged_sentence)
-        with open(testset_file.split('.')[0] + '_output.txt', 'w+') as out_f:
+        with open(testset_file.split('.')[0] + '_output.txt', 'a+') as out_f:
             out_f.write(tagged_sentence + '\n')
         # print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
     pred_results = '\n'.join(predicted_sentences)
@@ -541,10 +541,15 @@ def evaluate(model, testset_file, n_samples=None):
         true_tags_top_errors.add(curr_true_tag)
         pred_tags_top_errors.add(curr_pred_tag)
     tags_top_errors = list(pred_tags_top_errors.union(true_tags_top_errors))
-    print('confusion matrix:')
+    print('top errors confusion matrix:')
     print(f'true tag,{",".join(tags_top_errors)}')
     for true_tag in tags_top_errors:
         err_str = ','.join([str(conf_matrix[true_tag][pred_tag]) for pred_tag in tags_top_errors])
+        print(f'{true_tag},{err_str}')
+    print('full confusion matrix:')
+    print(f'true tag,{",".join(model.tags)}')
+    for true_tag in tags_top_errors:
+        err_str = ','.join([str(conf_matrix[true_tag][pred_tag]) for pred_tag in model.tags])
         print(f'{true_tag},{err_str}')
     print(f'average accuracy: {"{0:.2f}".format(accuracy)}')
     return correct_predictions / total_predictions
@@ -560,8 +565,8 @@ if __name__ == "__main__":
         'pickle_output': 'model_prm.pkl',
         'maxiter': 0,
         'test_file': 'test.wtag',
-        'test_train_size': 5,
-        'test_set_size': 1,
+        'test_train_size': 20,
+        'test_set_size': 20,
         'beam_min': 10
     }
 
