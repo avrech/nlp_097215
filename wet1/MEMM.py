@@ -345,9 +345,12 @@ class MEMM:
         sorted_pi = sorted([(k, u, v, pi[(k, u, v)]) for k, u, v in pi],  key=lambda x: x[3], reverse=True)
         index, tn_prev, tn, proba = [x for x in sorted_pi if x[0] == len(parsed_sentence)][0]
         result_tags = [tn_prev, tn]
-        for word_index in range(len(parsed_sentence) - 1, 1, -1):
-            index, tn_prev, tn, proba = [x for x in sorted_pi if x[0] == word_index and x[2] == result_tags[0]][0]
-            result_tags = [tn_prev] + result_tags
+        if len(parsed_sentence) == 1:
+            result_tags = result_tags[-1:]
+        else:
+            for word_index in range(len(parsed_sentence) - 1, 1, -1):
+                index, tn_prev, tn, proba = [x for x in sorted_pi if x[0] == word_index and x[2] == result_tags[0]][0]
+                result_tags = [tn_prev] + result_tags
         infer_time = time.time() - t_start
         return result_tags, infer_time
 
@@ -526,7 +529,7 @@ def evaluate(model, testset_file, n_samples=None):
         predictions.append(results_tag)
         for i, predicted_tag in enumerate(results_tag):
             true_tag = sentence[i][1]
-            if true_tag not in model.tags:
+            if true_tag not in model.tags or predicted_tag not in model.tags:
                 print('Error: unknown tag in test data')
                 continue
             conf_matrix[true_tag][predicted_tag] += 1

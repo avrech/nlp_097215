@@ -12,10 +12,11 @@ if __name__ == "__main__":
         'pickle_output': 'model_prm.pkl',
         'maxiter': 0,
         'test_file': 'test.wtag',
-        'test_train_size': 20,
-        'test_set_size': 20,
-        'affix_precent': 50,
+        'test_train_size': 5000,
+        'test_set_size': 1000,
+        'affix_precent': 90,
         'beam_min': 10,
+        'competition_file': 'comp.words',
     }
 
     parsed_sentences = get_parsed_sentences_from_tagged_file(params['train_file'])
