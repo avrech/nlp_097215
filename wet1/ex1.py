@@ -60,7 +60,7 @@ class MEMM:
     PREV_WORD_CUR_TAG = 'PREV_WORD_CURR_TAG'
     NEXT_WORD_CUR_TAG = 'NEXT_WORD_CURR_TAG'
 
-    def __init__(self):
+    def __init__(self, model_params):
         self.tags = []
         self.enriched_tags = []
         self.feature_set = {}
@@ -75,6 +75,13 @@ class MEMM:
         self.l_counter = self.l_grad_counter = 0
         self.safe_softmax = True
         self.verbose = 1
+        self.last_known_v = -math.inf
+        self.num_interations = 0
+        self.train_start = None
+        self.train_end = None
+        self.test_start = None
+        self.test_end = None
+        self.params = model_params
 
     @staticmethod
     def safe_add(curr_dict, key):
@@ -180,8 +187,8 @@ class MEMM:
         start_index += len(index_list)
         return start_index
 
-    def train_model(self, sentences, param_vec=None):
-        t_start = time.time()
+    def train_model(self, sentences):
+        self.train_start = datetime.datetime.now()
         # prepare data and get statistics
         print('{} - processing data'.format(datetime.datetime.now()))
         self.sentences = sentences
@@ -190,10 +197,10 @@ class MEMM:
         # filtering small affixes (by taking only top 10% of each affix length)
         for i in range(4):
             curr_threshold = math.floor(np.percentile([count for suf, count in text_stats[self.SUFFIX_TAG].items()
-                                                       if len(suf[0]) == i + 1], 50))
+                                                       if len(suf[0]) == i + 1], 90))
             self.suffix_threshold[i + 1] = curr_threshold
             curr_threshold = math.floor(np.percentile([count for suf, count in text_stats[self.PREFIX_TAG].items()
-                                                       if len(suf[0]) == i + 1], 50))
+                                                       if len(suf[0]) == i + 1], 90))
             self.prefix_threshold[i + 1] = curr_threshold
         # self.suff_th = {1: 200, 2: 100, 3: 50, 4: 8}
         text_stats[self.SUFFIX_TAG] = {(s, t): count_st for (s, t), count_st in text_stats[self.SUFFIX_TAG].items() if
@@ -235,6 +242,11 @@ class MEMM:
         start_index = self.add_features_subset(text_stats, self.NEXT_WORD_CUR_TAG, start_index)
         self.num_features = start_index
 
+        # print feature sizes
+        for dict_name in text_stats:
+            print(f'features subset: {dict_name}, num of features: {len(text_stats[dict_name])}')
+        print(f'A total of {self.num_features} features')
+
         # for each word in the corpus, find its feature vector (only positive indices)
         word_positive_indices = {}
         contexts_dict = {}
@@ -248,16 +260,29 @@ class MEMM:
         self.empirical_counts = self.get_empirical_counts_from_dict()
 
         # calculate the parameters vector
-        print(f'{datetime.datetime.now()} - finding parameter vector')
-        if param_vec is None:
-            param_vec = scipy.optimize.minimize(fun=self.ml, x0=np.ones(self.num_features), method='L-BFGS-B',
-                                                jac=self.grad_l)
-            self.parameter_vector = param_vec.x
+        if params['from_pickle']:
+            print(f'{datetime.datetime.now()} - loading parameter vector')
+            input_param_vec_f = open(params['pickle_input'], 'rb')
+            x0 = pickle.load(input_param_vec_f)
         else:
-            self.parameter_vector = param_vec
-        print(self.parameter_vector)
+            x0 = np.ones(self.num_features)
+
+        if params['train_again']:
+            print(f'{datetime.datetime.now()} - finding parameter vector')
+            param_vector = scipy.optimize.minimize(fun=self.ml, x0=x0, method='L-BFGS-B', jac=self.grad_l,
+                                                   options={'disp': True, 'maxiter': int(params['maxiter'])})
+            self.parameter_vector = param_vector.x
+        else:
+            # call ml just to calculate L(v)
+            self.ml(x0)
+            self.parameter_vector = x0
+
+        with open(params['pickle_output'], 'wb') as f:
+            pickle.dump(self.parameter_vector, f)
+
         print(f'{datetime.datetime.now()} - model train complete')
-        return time.time() - t_start
+        self.train_end = datetime.datetime.now()
+        return
 
     # use Viterbi to infer tags for the target sentence
     def infer(self, sentence):
@@ -419,10 +444,11 @@ class MEMM:
                     positive_features = self.get_positive_features_for_context(curr_context)
                     curr_exp += np.exp(self.get_dot_product_from_positive_features(positive_features, v))
                 norm_part += np.log(curr_exp)
-        res = proba - norm_part
-        self.log(f'{datetime.datetime.now()} - l = {self.l_counter},{res}')
+
+        self.last_known_v = proba - norm_part
+        self.log(f'{datetime.datetime.now()} - l = {self.l_counter},{self.last_known_v}')
         self.l_counter += 1
-        return -res
+        return -self.last_known_v
 
     def grad_l(self, v):
         # expected counts
@@ -487,6 +513,7 @@ def evaluate(model, testset_file, n_samples, max_words=None):
     parsed_testset = get_parsed_sentences_from_tagged_file(testset_file)
     predictions = []
     accuracy = []
+    conf_matrix = {true_tag: {predicted_tag: 0 for predicted_tag in model.tags} for true_tag in model.tags}
     for ii, sample in enumerate(parsed_testset[:n_samples]):
         sentence = ' '.join([word[0] for word in sample[:max_words]])
         results_tag, inference_time = model.infer(sentence)
@@ -500,28 +527,52 @@ def evaluate(model, testset_file, n_samples, max_words=None):
         tagged_sentence = ['{}_{}'.format(sentence.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
         print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
     print(f'average accuracy: {"{0:.2f}".format(np.mean(accuracy))}')
+    return np.mean(accuracy)
 
 
 if __name__ == "__main__":
     # load training set
+    params = {
+        'train_set_size': 5000,
+        'from_pickle': True,
+        'pickle_input': 'model_prm - 5000 train 10 percent affix.pkl',
+        'pickle_output': 'model_prm.pkl',
+        'train_again': False,
+        'maxiter': 20,
+        'test_train_size': 20,
+        'test_set_size': 20,
+    }
+
     parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
-    my_model = MEMM()
-    param_vector = None
-    f = open('model_prm.pkl', 'rb')
-    # param_vector = pickle.load(f)
-    train_time = my_model.train_model(parsed_sentences[:1000], param_vector)
-    print(f'train: time - {"{0:.2f}".format(train_time)}[sec]')
-    with open('model_prm.pkl', 'wb') as f:
-        pickle.dump(my_model.parameter_vector, f)
-    # model.test('bla', annotated=True)
+    my_model = MEMM(params)
+    my_model.train_model(parsed_sentences[:params['train_set_size']])
 
-    # sentence1 = ' '.join([word[0] for word in parsed_sentences[0]])
-    # results_tag, inference_time = model.infer(sentence1)
-    # tagged_sentence1 = ['{}_{}'.format(sentence1.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
-    # # print(f'results({inference_time}[sec]: {" ".join(tagged_sentence1)}')
-    # print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence1)}')
-
-    evaluate(my_model, 'train.wtag', 3)
-
+    # ecvaluate train set
+    print('====================== testing accuracy on train data ======================')
+    train_infer_start = datetime.datetime.now()
+    train_acc = evaluate(my_model, 'train.wtag', params['test_train_size'])
+    train_infer_end = datetime.datetime.now()
     # Evaluate test set:
-    evaluate(my_model, 'test.wtag', 3)
+    print('====================== testing accuracy on test data ======================')
+    test_infer_start = datetime.datetime.now()
+    test_acc = evaluate(my_model, 'test.wtag', params['test_set_size'])
+    test_infer_end = datetime.datetime.now()
+
+    print('train size,start time,finish time,total time,max iter,last l,train test size,train acc,train infer start,'
+          'train infer end,train infer total,test infer start,test infer end,test infer total,test set size,test acc')
+    print(f'{params["train_set_size"]},'
+          f'{my_model.train_start},'
+          f'{my_model.train_end},'
+          f'{my_model.train_end - my_model.train_start},'
+          f'{params["maxiter"]},'
+          f'{my_model.last_known_v},'
+          f'{params["test_train_size"]},'
+          f'{train_acc},'
+          f'{train_infer_start},'
+          f'{train_infer_end},'
+          f'{train_infer_end - train_infer_start},'
+          f'{test_infer_start},'
+          f'{test_infer_end},'
+          f'{train_infer_end - train_infer_start},'
+          f'{params["test_set_size"]},'
+          f'{test_acc}')
