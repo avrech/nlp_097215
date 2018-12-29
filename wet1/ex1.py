@@ -350,11 +350,6 @@ class MEMM:
         infer_time = time.time() - t_start
         return result_tags, infer_time
 
-    def get_feature_vector_for_context(self, positive_features):
-        vector = np.zeros(self.num_features)
-        vector[positive_features] += 1
-        return vector
-
     def get_positive_features_for_context(self, context):
         positive_indices = [self.feature_set[self.WORD_TAG_PAIRS].get((context.word, context.tag), None)]
         for i in range(min(4, len(context.word) - 1)):
@@ -393,10 +388,6 @@ class MEMM:
         for positive_features in self.word_positive_indices.values():
             emprical_counts[positive_features] += 1
         return emprical_counts
-
-    def get_dot_product(self, feature_vector):
-        dot_product = sum([feature_vector[i] * self.parameter_vector[i] for i in range(len(feature_vector))])
-        return dot_product
 
     @staticmethod
     def get_dot_product_from_positive_features(positive_indices, v):
@@ -441,7 +432,6 @@ class MEMM:
 
                 for tag in self.tags:
                     curr_context.tag = tag
-                    # vector = self.get_feature_vector_for_context(curr_context)
                     positive_features = self.get_positive_features_for_context(curr_context)
                     curr_exp += np.exp(self.get_dot_product_from_positive_features(positive_features, v))
                 norm_part += np.log(curr_exp)
@@ -465,7 +455,6 @@ class MEMM:
                 for tag in self.tags:
                     curr_context.tag = tag
                     curr_positive_features = self.get_positive_features_for_context(curr_context)
-                    # vector = self.get_feature_vector_for_context(curr_positive_features)
                     vectors.append(curr_positive_features)
                     dot_products.append(self.get_dot_product_from_positive_features(curr_positive_features, v))
                 dot_products = np.array(dot_products) - max(dot_products)
@@ -479,9 +468,6 @@ class MEMM:
         self.log(f'{datetime.datetime.now()} - grad = {self.l_grad_counter}')
         self.l_grad_counter += 1
         return -res
-
-    def test(self, text, annotated=False):
-        pass
 
 
 # receives input file (of tagged sentences),
