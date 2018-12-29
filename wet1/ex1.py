@@ -41,7 +41,6 @@ class Context:
 
 
 class MEMM:
-    BEAM_MIN = 10
     WORD_UNIGRAMS = 'WORD_UNIGRAMS'
     WORD_BIGRAMS = 'WORD_BIGRAMS'
     WORD_TRIGRAMS = 'WORD_TRIGRAMS'
@@ -82,6 +81,7 @@ class MEMM:
         self.test_start = None
         self.test_end = None
         self.params = model_params
+        self.beam_min = int(self.params['beam_min'])
 
     @staticmethod
     def safe_add(curr_dict, key):
@@ -287,10 +287,10 @@ class MEMM:
 
     # use Viterbi to infer tags for the target sentence
     def infer(self, sentence):
-        print(f'{datetime.datetime.now()} - predict for:')
-        print(sentence)
+        # print(f'{datetime.datetime.now()} - predict for:')
+        # print(sentence)
         t_start = time.time()
-        parsed_sentence = [word.rstrip() for word in sentence.split(' ')]
+        parsed_sentence = tuple(word.rstrip() for word in sentence.split(' '))
         pi = {(0, None, None): 1}
         bp = {}
         for word_index in range(1, len(parsed_sentence) + 1):
@@ -325,12 +325,12 @@ class MEMM:
                     bp_temp[(word_index, prev_tag, tag)] = np.argmax(pi_candidates)
 
             # trim entries with low probability (beam search)
-            # find the probabilty above which we have at least BEAM_MIN possibilities
+            # find the probabilty above which we have at least beam_min possibilities
             min_proba_for_stage = 1
             count_entries_per_proba = len([pi_val for pi_key, pi_val in pi_temp.items()
                                            if pi_val >= min_proba_for_stage])
 
-            while count_entries_per_proba < self.BEAM_MIN:
+            while count_entries_per_proba < self.beam_min:
                 min_proba_for_stage = max([pi_val for pi_key, pi_val in pi_temp.items()
                                            if pi_val < min_proba_for_stage])
                 count_entries_per_proba = len([pi_val for pi_key, pi_val in pi_temp.items()
@@ -500,8 +500,11 @@ def evaluate(model, testset_file, n_samples=None):
     parsed_testset = get_parsed_sentences_from_tagged_file(testset_file)
     predictions = []
     sentence_accuracy = []
+    predicted_sentences = []
+    correct_predictions = 0
+    total_predictions = 0
     conf_matrix = {true_tag: {predicted_tag: 0 for predicted_tag in model.tags} for true_tag in model.tags}
-    for sentence in parsed_testset[:n_samples]:
+    for sentence in tqdm(parsed_testset[:n_samples], 'inferring sentences...'):
         unparsed_sentence = ' '.join([word[0] for word in sentence])
         results_tag, inference_time = model.infer(unparsed_sentence)
         predictions.append(results_tag)
@@ -509,9 +512,15 @@ def evaluate(model, testset_file, n_samples=None):
             true_tag = sentence[i][1]
             conf_matrix[true_tag][predicted_tag] += 1
         comparison = [results_tag[word_idx] == sentence[word_idx][1] for word_idx in range(len(sentence))]
+        correct_predictions += sum(comparison)
+        total_predictions += len(comparison)
         sentence_accuracy.append(sum(comparison) / len(comparison))
-        tagged_sentence = ['{}_{}'.format(sentence[i][0], results_tag[i]) for i in range(len(results_tag))]
-        print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
+        tagged_sentence = ' '.join(['{}_{}'.format(sentence[i][0], results_tag[i]) for i in range(len(results_tag))])
+        predicted_sentences.append(tagged_sentence)
+        with open(testset_file.split('.')[0] + '_output.txt', 'w+') as out_f:
+            out_f.write(tagged_sentence + '\n')
+        # print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
+    pred_results = '\n'.join(predicted_sentences)
 
     accuracy = np.mean(sentence_accuracy)
     # flatten confusion matrix, find top errors
@@ -533,12 +542,12 @@ def evaluate(model, testset_file, n_samples=None):
         pred_tags_top_errors.add(curr_pred_tag)
     tags_top_errors = list(pred_tags_top_errors.union(true_tags_top_errors))
     print('confusion matrix:')
-    print(f'true tag,{",".join(pred_tags_top_errors)}')
+    print(f'true tag,{",".join(tags_top_errors)}')
     for true_tag in tags_top_errors:
         err_str = ','.join([str(conf_matrix[true_tag][pred_tag]) for pred_tag in tags_top_errors])
         print(f'{true_tag},{err_str}')
     print(f'average accuracy: {"{0:.2f}".format(accuracy)}')
-    return accuracy
+    return correct_predictions / total_predictions
 
 
 if __name__ == "__main__":
@@ -547,12 +556,13 @@ if __name__ == "__main__":
         'train_file': 'train.wtag',
         'train_set_size': 5000,
         'from_pickle': True,
-        'pickle_input': 'model_prm - 5000 train 10 percent affix 102iter.pkl',
+        'pickle_input': 'model_prm - 5000 train 10 percent affix 110iter.pkl',
         'pickle_output': 'model_prm.pkl',
         'maxiter': 0,
         'test_file': 'test.wtag',
-        'test_train_size': 20,
-        'test_set_size': 20,
+        'test_train_size': 5,
+        'test_set_size': 1,
+        'beam_min': 10
     }
 
     parsed_sentences = get_parsed_sentences_from_tagged_file(params['train_file'])
