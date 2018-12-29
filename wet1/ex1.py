@@ -247,38 +247,40 @@ class MEMM:
             print(f'features subset: {dict_name}, num of features: {len(text_stats[dict_name])}')
         print(f'A total of {self.num_features} features')
 
-        # for each word in the corpus, find its feature vector (only positive indices)
-        word_positive_indices = {}
-        contexts_dict = {}
-        for sentence in sentences:
-            for i in range(len(sentence)):
-                context = Context.get_context_tagged(sentence, i)
-                positive_indices = self.get_positive_features_for_context(context)
-                word_positive_indices[(sentence, i)] = positive_indices
-                contexts_dict[(sentence, i)] = context
-        self.word_positive_indices = word_positive_indices
-        self.empirical_counts = self.get_empirical_counts_from_dict()
 
         # calculate the parameters vector
         if params['from_pickle']:
-            print(f'{datetime.datetime.now()} - loading parameter vector')
+            print(f'{datetime.datetime.now()} - loading initial parameter vector')
             input_param_vec_f = open(params['pickle_input'], 'rb')
             x0 = pickle.load(input_param_vec_f)
         else:
             x0 = np.ones(self.num_features)
 
-        if params['train_again']:
+        maxiter = int(params['maxiter'])
+        if maxiter > 0:
+            # for each word in the corpus, find its feature vector (only positive indices)
+            print(f'{datetime.datetime.now()} - computing features for train data')
+            word_positive_indices = {}
+            contexts_dict = {}
+            for sentence in sentences:
+                for i in range(len(sentence)):
+                    context = Context.get_context_tagged(sentence, i)
+                    positive_indices = self.get_positive_features_for_context(context)
+                    word_positive_indices[(sentence, i)] = positive_indices
+                    contexts_dict[(sentence, i)] = context
+            self.word_positive_indices = word_positive_indices
+            self.empirical_counts = self.get_empirical_counts_from_dict()
+
             print(f'{datetime.datetime.now()} - finding parameter vector')
             param_vector = scipy.optimize.minimize(fun=self.ml, x0=x0, method='L-BFGS-B', jac=self.grad_l,
                                                    options={'disp': True, 'maxiter': int(params['maxiter'])})
             self.parameter_vector = param_vector.x
+            with open(params['pickle_output'], 'wb') as f:
+                pickle.dump(self.parameter_vector, f)
         else:
             # call ml just to calculate L(v)
             self.ml(x0)
             self.parameter_vector = x0
-
-        with open(params['pickle_output'], 'wb') as f:
-            pickle.dump(self.parameter_vector, f)
 
         print(f'{datetime.datetime.now()} - model train complete')
         self.train_end = datetime.datetime.now()
@@ -509,56 +511,81 @@ def get_parsed_sentences_from_tagged_file(filename):
     return sentences
 
 
-def evaluate(model, testset_file, n_samples, max_words=None):
+def evaluate(model, testset_file, n_samples=None):
     parsed_testset = get_parsed_sentences_from_tagged_file(testset_file)
     predictions = []
-    accuracy = []
+    sentence_accuracy = []
     conf_matrix = {true_tag: {predicted_tag: 0 for predicted_tag in model.tags} for true_tag in model.tags}
-    for ii, sample in enumerate(parsed_testset[:n_samples]):
-        sentence = ' '.join([word[0] for word in sample[:max_words]])
-        results_tag, inference_time = model.infer(sentence)
+    for sentence in parsed_testset[:n_samples]:
+        unparsed_sentence = ' '.join([word[0] for word in sentence])
+        results_tag, inference_time = model.infer(unparsed_sentence)
         predictions.append(results_tag)
-        if max_words:
-            comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(max_words)]
-        else:
-            comparison = [results_tag[word_idx] == sample[word_idx][1] for word_idx in range(len(sample))]
-
-        accuracy.append(sum(comparison) / len(comparison))
-        tagged_sentence = ['{}_{}'.format(sentence.split(" ")[i], results_tag[i]) for i in range(len(results_tag))]
+        for i, predicted_tag in enumerate(results_tag):
+            true_tag = sentence[i][1]
+            conf_matrix[true_tag][predicted_tag] += 1
+        comparison = [results_tag[word_idx] == sentence[word_idx][1] for word_idx in range(len(sentence))]
+        sentence_accuracy.append(sum(comparison) / len(comparison))
+        tagged_sentence = ['{}_{}'.format(sentence[i][0], results_tag[i]) for i in range(len(results_tag))]
         print(f'results: time - {"{0:.2f}".format(inference_time)}[sec], tags - {" ".join(tagged_sentence)}')
-    print(f'average accuracy: {"{0:.2f}".format(np.mean(accuracy))}')
-    return np.mean(accuracy)
+
+    accuracy = np.mean(sentence_accuracy)
+    # flatten confusion matrix, find top errors
+    flat_conf_mat = []
+    for true_tag in conf_matrix:
+        for predicted_tag in conf_matrix[true_tag]:
+            flat_conf_mat.append((true_tag, predicted_tag, conf_matrix[true_tag][predicted_tag]))
+    sorted_flat_conf_mat = sorted(flat_conf_mat, key=lambda x: x[2], reverse=True)
+    true_tags_top_errors = set()
+    pred_tags_top_errors = set()
+    curr_row = 0
+    while len(true_tags_top_errors) < 10 and curr_row < len(sorted_flat_conf_mat):
+        curr_true_tag = sorted_flat_conf_mat[curr_row][0]
+        curr_pred_tag = sorted_flat_conf_mat[curr_row][1]
+        curr_row += 1
+        if curr_true_tag == curr_pred_tag:
+            continue
+        true_tags_top_errors.add(curr_true_tag)
+        pred_tags_top_errors.add(curr_pred_tag)
+    pred_tags_top_errors = list(pred_tags_top_errors)
+    print('confusion matrix:')
+    print(f'true tag,{",".join(pred_tags_top_errors)}')
+    for true_tag in true_tags_top_errors:
+        err_str = ','.join([str(conf_matrix[true_tag][pred_tag]) for pred_tag in pred_tags_top_errors])
+        print(f'{true_tag},{err_str}')
+    print(f'average accuracy: {"{0:.2f}".format(accuracy)}')
+    return accuracy
 
 
 if __name__ == "__main__":
     # load training set
     params = {
+        'train_file': 'train.wtag',
         'train_set_size': 5000,
         'from_pickle': True,
-        'pickle_input': 'model_prm - 5000 train 10 percent affix.pkl',
+        'pickle_input': 'model_prm - 5000 train 10 percent affix 102iter.pkl',
         'pickle_output': 'model_prm.pkl',
-        'train_again': False,
-        'maxiter': 20,
+        'maxiter': 0,
+        'test_file': 'test.wtag',
         'test_train_size': 20,
         'test_set_size': 20,
     }
 
-    parsed_sentences = get_parsed_sentences_from_tagged_file('train.wtag')
+    parsed_sentences = get_parsed_sentences_from_tagged_file(params['train_file'])
     my_model = MEMM(params)
     my_model.train_model(parsed_sentences[:params['train_set_size']])
 
     # ecvaluate train set
     print('====================== testing accuracy on train data ======================')
     train_infer_start = datetime.datetime.now()
-    train_acc = evaluate(my_model, 'train.wtag', params['test_train_size'])
+    train_acc = evaluate(my_model, params['train_file'], params['test_train_size'])
     train_infer_end = datetime.datetime.now()
     # Evaluate test set:
     print('====================== testing accuracy on test data ======================')
     test_infer_start = datetime.datetime.now()
-    test_acc = evaluate(my_model, 'test.wtag', params['test_set_size'])
+    test_acc = evaluate(my_model, params['test_file'], params['test_set_size'])
     test_infer_end = datetime.datetime.now()
 
-    print('train size,start time,finish time,total time,max iter,last l,train test size,train acc,train infer start,'
+    print('train size,start time,finish time,total time,max iter,last L(v),train test size,train acc,train infer start,'
           'train infer end,train infer total,test infer start,test infer end,test infer total,test set size,test acc')
     print(f'{params["train_set_size"]},'
           f'{my_model.train_start},'
