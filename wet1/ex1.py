@@ -247,6 +247,18 @@ class MEMM:
             print(f'features subset: {dict_name}, num of features: {len(text_stats[dict_name])}')
         print(f'A total of {self.num_features} features')
 
+        # for each word in the corpus, find its feature vector (only positive indices)
+        print(f'{datetime.datetime.now()} - computing features for train data')
+        word_positive_indices = {}
+        contexts_dict = {}
+        for sentence in sentences:
+            for i in range(len(sentence)):
+                context = Context.get_context_tagged(sentence, i)
+                positive_indices = self.get_positive_features_for_context(context)
+                word_positive_indices[(sentence, i)] = positive_indices
+                contexts_dict[(sentence, i)] = context
+        self.word_positive_indices = word_positive_indices
+        self.empirical_counts = self.get_empirical_counts_from_dict()
 
         # calculate the parameters vector
         if params['from_pickle']:
@@ -258,19 +270,6 @@ class MEMM:
 
         maxiter = int(params['maxiter'])
         if maxiter > 0:
-            # for each word in the corpus, find its feature vector (only positive indices)
-            print(f'{datetime.datetime.now()} - computing features for train data')
-            word_positive_indices = {}
-            contexts_dict = {}
-            for sentence in sentences:
-                for i in range(len(sentence)):
-                    context = Context.get_context_tagged(sentence, i)
-                    positive_indices = self.get_positive_features_for_context(context)
-                    word_positive_indices[(sentence, i)] = positive_indices
-                    contexts_dict[(sentence, i)] = context
-            self.word_positive_indices = word_positive_indices
-            self.empirical_counts = self.get_empirical_counts_from_dict()
-
             print(f'{datetime.datetime.now()} - finding parameter vector')
             param_vector = scipy.optimize.minimize(fun=self.ml, x0=x0, method='L-BFGS-B', jac=self.grad_l,
                                                    options={'disp': True, 'maxiter': int(params['maxiter'])})
@@ -546,11 +545,11 @@ def evaluate(model, testset_file, n_samples=None):
             continue
         true_tags_top_errors.add(curr_true_tag)
         pred_tags_top_errors.add(curr_pred_tag)
-    pred_tags_top_errors = list(pred_tags_top_errors)
+    tags_top_errors = list(pred_tags_top_errors.union(true_tags_top_errors))
     print('confusion matrix:')
     print(f'true tag,{",".join(pred_tags_top_errors)}')
-    for true_tag in true_tags_top_errors:
-        err_str = ','.join([str(conf_matrix[true_tag][pred_tag]) for pred_tag in pred_tags_top_errors])
+    for true_tag in tags_top_errors:
+        err_str = ','.join([str(conf_matrix[true_tag][pred_tag]) for pred_tag in tags_top_errors])
         print(f'{true_tag},{err_str}')
     print(f'average accuracy: {"{0:.2f}".format(accuracy)}')
     return accuracy
