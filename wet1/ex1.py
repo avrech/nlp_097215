@@ -195,12 +195,13 @@ class MEMM:
         text_stats = self.get_text_statistics()
 
         # filtering small affixes (by taking only top 10% of each affix length)
+        affix_percent = int(self.params['affix_precent'])
         for i in range(4):
             curr_threshold = math.floor(np.percentile([count for suf, count in text_stats[self.SUFFIX_TAG].items()
-                                                       if len(suf[0]) == i + 1], 90))
+                                                       if len(suf[0]) == i + 1], affix_percent))
             self.suffix_threshold[i + 1] = curr_threshold
             curr_threshold = math.floor(np.percentile([count for suf, count in text_stats[self.PREFIX_TAG].items()
-                                                       if len(suf[0]) == i + 1], 90))
+                                                       if len(suf[0]) == i + 1], affix_percent))
             self.prefix_threshold[i + 1] = curr_threshold
         # self.suff_th = {1: 200, 2: 100, 3: 50, 4: 8}
         text_stats[self.SUFFIX_TAG] = {(s, t): count_st for (s, t), count_st in text_stats[self.SUFFIX_TAG].items() if
@@ -497,6 +498,8 @@ def get_parsed_sentences_from_tagged_file(filename):
 
 
 def evaluate(model, testset_file, n_samples=None):
+    if n_samples == 0:
+        return 0
     parsed_testset = get_parsed_sentences_from_tagged_file(testset_file)
     predictions = []
     sentence_accuracy = []
@@ -510,6 +513,9 @@ def evaluate(model, testset_file, n_samples=None):
         predictions.append(results_tag)
         for i, predicted_tag in enumerate(results_tag):
             true_tag = sentence[i][1]
+            if true_tag not in model.tags:
+                print('Error: unknown tag in test data')
+                continue
             conf_matrix[true_tag][predicted_tag] += 1
         comparison = [results_tag[word_idx] == sentence[word_idx][1] for word_idx in range(len(sentence))]
         correct_predictions += sum(comparison)
@@ -567,7 +573,8 @@ if __name__ == "__main__":
         'test_file': 'test.wtag',
         'test_train_size': 20,
         'test_set_size': 20,
-        'beam_min': 10
+        'affix_precent': 50,
+        'beam_min': 10,
     }
 
     parsed_sentences = get_parsed_sentences_from_tagged_file(params['train_file'])
