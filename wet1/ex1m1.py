@@ -8,10 +8,10 @@ if __name__ == "__main__":
     params = {
         'train_file': 'train.wtag',
         'train_set_size': 5000,
-        'from_pickle': False,
+        'from_pickle': True,
         'pickle_input': 'model_prm - 5000 train 10 percent affix 110iter.pkl',
         'pickle_output': 'model_prm.pkl',
-        'maxiter': 110,
+        'maxiter': 0,
         'test_file': 'test.wtag',
         'test_train_size': 5000,
         'test_set_size': 1000,
