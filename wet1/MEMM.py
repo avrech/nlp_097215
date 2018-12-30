@@ -355,6 +355,10 @@ class MEMM:
         return result_tags, infer_time
 
     def get_positive_features_for_context(self, context):
+        """
+        :param context: a Context
+        :return: indices of the features which are positive for the context
+        """
         positive_indices = [self.feature_set[self.WORD_TAG_PAIRS].get((context.word, context.tag), None)]
         for i in range(min(4, len(context.word) - 1)):
             positive_indices.append(self.feature_set[self.SUFFIX_TAG].get((context.word[-i-1:], context.tag), None))
@@ -474,10 +478,12 @@ class MEMM:
         return -res
 
 
-# receives input file (of tagged sentences),
-# returns a list of sentences, each sentence is a list of (word,tag)s
-# also performs base verification of input
 def get_parsed_sentences_from_tagged_file(filename):
+    """
+    :param filename: input file (of tagged sentences)
+    :return: a list of sentences, each sentence is a list of (word,tag)s
+    also performs base verification of input
+    """
     print(f'{datetime.datetime.now()} - loading data from file {filename}')
     f_text = open(filename)
     all_words_and_tags = []
@@ -501,6 +507,8 @@ def get_parsed_sentences_from_tagged_file(filename):
 
 
 def tag_file(model, filename):
+    """Receives a model and an umtagged file,
+        predicts tags for each of the sentences and writes them in an output file"""
     input_f = open(filename)
     predicted_sentences = []
     for sentence in tqdm(input_f, 'tagging sentences...'):
@@ -514,9 +522,17 @@ def tag_file(model, filename):
 
 
 def evaluate(model, testset_file, n_samples=None):
+    """Receives a model and a tagged file,
+    predicts tags for each of the sentences and computes accuracy and confusion matrices"""
     if n_samples == 0:
         return 0
     parsed_testset = get_parsed_sentences_from_tagged_file(testset_file)
+    legal_setences = []
+    for sentence in parsed_testset:
+        bad_tags = [tag for word, tag in sentence if tag not in model.tags]
+        if len(bad_tags) == 0:
+            legal_setences.append(sentence)
+    parsed_testset = legal_setences
     predictions = []
     sentence_accuracy = []
     predicted_sentences = []
@@ -542,7 +558,7 @@ def evaluate(model, testset_file, n_samples=None):
         with open(testset_file.split('.')[0] + '_output.txt', 'a+') as out_f:
             out_f.write(tagged_sentence + '\n')
 
-    accuracy = np.mean(sentence_accuracy)
+    accuracy = correct_predictions / total_predictions
     # flatten confusion matrix, find top errors
     flat_conf_mat = []
     for true_tag in conf_matrix:
@@ -571,11 +587,13 @@ def evaluate(model, testset_file, n_samples=None):
     for true_tag in tags_top_errors:
         err_str = ','.join([str(conf_matrix[true_tag][pred_tag]) for pred_tag in model.tags])
         print(f'{true_tag},{err_str}')
-    print(f'average accuracy: {"{0:.2f}".format(accuracy)}')
+    print(f'average accuracy: {"{0:.3f}".format(accuracy)}')
     return correct_predictions / total_predictions
 
 
 def compare_files(tagged_file, predicted_file, tags_list):
+    """Receives a model and a tagged file,
+        predicts tags for each of the sentences and computes accuracy and confusion matrices"""
     tagged_sentences = get_parsed_sentences_from_tagged_file(tagged_file)
     pred_sentences = get_parsed_sentences_from_tagged_file(predicted_file)
     correct_predictions = 0
@@ -592,7 +610,7 @@ def compare_files(tagged_file, predicted_file, tags_list):
             print(f'Error in sentence {sentence_index}: different word')
             continue
         tag_comparison = [tagged_sentence[word_idx][1] == pred_sentence[word_idx][1]
-                           for word_idx in range(len(tagged_sentence))]
+                          for word_idx in range(len(tagged_sentence))]
         correct_predictions += sum(tag_comparison)
         total_predictions += len(tag_comparison)
         for i, tag_word in enumerate(tagged_sentence):
@@ -634,6 +652,7 @@ def compare_files(tagged_file, predicted_file, tags_list):
         print(f'{true_tag},{err_str}')
     print(f'average accuracy: {"{0:.3f}".format(accuracy)}')
     return correct_predictions / total_predictions
+
 
 if __name__ == "__main__":
     pass

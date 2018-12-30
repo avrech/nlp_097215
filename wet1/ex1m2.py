@@ -3,17 +3,18 @@ import datetime
 from wet1.MEMM import evaluate, MEMM, get_parsed_sentences_from_tagged_file, tag_file, compare_files
 
 if __name__ == "__main__":
-    # load training set
+    # To run a model from scrach: set from_pickle: False, enter train and test file names, max num of sentences for
+    # training (train_set_size) and maximal number of iterations (max_iter)
     params = {
         'train_file': 'train2.wtag',
-        'train_set_size': 5000,
-        'from_pickle': True,
+        'train_set_size': 700,
+        'from_pickle': False,
         'pickle_input': 'model_prm - model2 60iter 50affix.pkl',
         'pickle_output': 'model_prm.pkl',
-        'maxiter': 0,
+        'maxiter': 50,
         'test_file': 'test.wtag',
-        'test_train_size': 0,
-        'test_set_size': 0,
+        'test_train_size': 700,
+        'test_set_size': 1000,
         'affix_precent': 50,
         'beam_min': 10,
         'competition_file': 'comp2.words',
@@ -30,6 +31,12 @@ if __name__ == "__main__":
     train_infer_start = datetime.datetime.now()
     train_acc = evaluate(my_model, params['train_file'], params['test_train_size'])
     train_infer_end = datetime.datetime.now()
+
+    # Evaluate test set:
+    print('====================== testing accuracy on test data ======================')
+    test_infer_start = datetime.datetime.now()
+    test_acc = evaluate(my_model, params['test_file'], params['test_set_size'])
+    test_infer_end = datetime.datetime.now()
 
     # tagging competition
     print('====================== testing accuracy on train data ======================')
