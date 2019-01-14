@@ -13,7 +13,7 @@ class DependencyParser:
         self.global_features_dict = {}
         self.params = params
         self.num_of_features = 0
-        self.param_vec = np.zeros(self.num_of_features)
+        self.param_vec = None
 
     def train(self, sentences):
         # calc for each sentence: the true graph, a feature vector for each (h,m) in x, and the digraph
@@ -28,6 +28,8 @@ class DependencyParser:
             for feature in features_dict[k]:
                 self.indexed_features[k][feature] = curr_index
                 curr_index += 1
+        self.num_of_features = curr_index
+        self.param_vec = np.zeros(self.num_of_features)
 
         for sentence in tqdm(sentences, 'Calculating local and global features...'):
             self.local_features_dict[sentence] = self.calc_local_features(sentence)
