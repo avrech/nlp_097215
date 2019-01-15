@@ -40,7 +40,7 @@ class DependencyParser:
         num_of_epochs = self.params['num_of_epochs']
         for n in tqdm(range(num_of_epochs), 'Running perceptron...'):
             for sentence in sentences:
-                y_pred = self.digraphs_dict[sentence].mst()
+                y_pred = self.digraphs_dict[sentence].mst().successors
                 if y_pred != self.true_graphs_dict[sentence]:
                     new_w = self.param_vec + self.get_features_delta_vec(sentence, y_pred)
                     self.param_vec = new_w
