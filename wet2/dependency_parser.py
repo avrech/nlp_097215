@@ -1,8 +1,7 @@
-import datetime
-
+import pickle
 from tqdm import tqdm
 import numpy as np
-
+import datetime
 from chu_liu import Digraph
 
 
@@ -49,6 +48,11 @@ class DependencyParser:
                 if y_pred != self.true_graphs_dict[sentence]:
                     new_w = self.param_vec + self.get_features_delta_vec(sentence, y_pred)
                     self.param_vec = new_w
+
+        # Save parap_vec to pkl:
+        with open(str(datetime.datetime.now()) + "-param_vec.pkl", "wb") as f:
+            pickle.dump(self.param_vec, f)
+
 
     @staticmethod
     def calc_graph(sentence):
