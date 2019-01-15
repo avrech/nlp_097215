@@ -3,7 +3,7 @@ import datetime
 from tqdm import tqdm
 import numpy as np
 
-from wet2.chu_liu import Digraph
+from chu_liu import Digraph
 
 
 class DependencyParser:
@@ -40,9 +40,11 @@ class DependencyParser:
 
         # run Perceptron to find best parameter vector
         num_of_epochs = self.params['num_of_epochs']
+        print('----------------------------------')
+        print('Running perceptron on sentences...')
+        print('----------------------------------')
         for n in range(num_of_epochs):
-            print('{} - in epoch {}'.format(datetime.datetime.now(), n))
-            for sentence in tqdm(sentences, 'Running perceptron on sentences...'):
+            for sentence in tqdm(sentences, 'Epoch no. {}'.format(n+1)):
                 y_pred = self.digraphs_dict[sentence].mst().successors
                 if y_pred != self.true_graphs_dict[sentence]:
                     new_w = self.param_vec + self.get_features_delta_vec(sentence, y_pred)
@@ -52,8 +54,10 @@ class DependencyParser:
     def calc_graph(sentence):
         """
         returns the true graph for an annotated sentence
-        :param sentence: annotated sentence
+        :param sentence: annotated sentence - ((WORD1_ID, HEAD1_ID, POS1, DEP_LABEL1), (WORD2_ID, ...) ,... )
         :return: {node_index: [index1, index2, ..], ..}
+                 The dict keys are the source nodes. and values are destination nodes,
+                 representing directed edges from src_node to dst_node.
         """
         graph = {word[1]: [] for word in sentence}
         for word in sentence:
@@ -80,15 +84,16 @@ class DependencyParser:
                         p_pos = sentence[p_node-1][3]
                     c_word = sentence[c_node-1][2]
                     c_pos = sentence[c_node-1][3]
-                    self.safe_add(features_dict[1], (p_word, p_pos))
-                    self.safe_add(features_dict[2], p_word)
-                    self.safe_add(features_dict[3], p_pos)
-                    self.safe_add(features_dict[4], (c_word, c_pos))
-                    self.safe_add(features_dict[5], c_word)
-                    self.safe_add(features_dict[6], c_pos)
-                    self.safe_add(features_dict[8], (p_pos, c_word, c_pos))
-                    self.safe_add(features_dict[10], (p_word, p_pos, c_pos))
-                    self.safe_add(features_dict[13], (p_pos, c_pos))
+                    # for the basic model we use the feature set 1-13, except 7,9,11,12.
+                    self.safe_add(features_dict[1], (p_word, p_pos))            # 1
+                    self.safe_add(features_dict[2], p_word)                     # 2
+                    self.safe_add(features_dict[3], p_pos)                      # 3
+                    self.safe_add(features_dict[4], (c_word, c_pos))            # 4
+                    self.safe_add(features_dict[5], c_word)                     # 5
+                    self.safe_add(features_dict[6], c_pos)                      # 6
+                    self.safe_add(features_dict[8], (p_pos, c_word, c_pos))     # 8
+                    self.safe_add(features_dict[10], (p_word, p_pos, c_pos))    # 10
+                    self.safe_add(features_dict[13], (p_pos, c_pos))            # 13
         return features_dict
 
     @staticmethod
@@ -97,7 +102,7 @@ class DependencyParser:
             curr_dict[key] = 0
         curr_dict[key] += 1
 
-    def prepare_digraph(self, sentence):
+    def prepare_digraph(self, sentence): #TODO: verify functionality on non-annotated sentences.
         """
         prepares a full graph on the sentence, with the appropriate scoring function
         :param sentence:
@@ -178,17 +183,17 @@ class DependencyParser:
         :param y_graph:
         :return: dict {index: count for positive index}
         """
-        global_featurs = {}
+        global_features = {}
         if sentence in self.local_features_dict:
             for source_node in y_graph:
                 for target_node in y_graph[source_node]:
                     for positive_index in self.local_features_dict[sentence][(source_node, target_node)]:
-                        if positive_index not in global_featurs:
-                            global_featurs[positive_index] = 0
-                        global_featurs[positive_index] += 1
+                        if positive_index not in global_features:
+                            global_features[positive_index] = 0
+                        global_features[positive_index] += 1
         else:
             print('Error - no local features for sentence {}'.format(sentence))
-        return global_featurs
+        return global_features
 
     def infer(self, sentence):
         """
@@ -199,6 +204,27 @@ class DependencyParser:
         digraph = self.prepare_digraph(sentence)
         return digraph.mst().successors
 
+    def evaluate(self, sentences, verbose=False):
+        """
+        Evaluate accuracy of the model as (# true_predictions / # words)
+        :param sentences: annotated sentences.
+        :return: accuracy in [0,1]
+        """
+        total_shot = []
+        for sentence in sentences:
+            true_successors = self.calc_graph(sentence)
+            pred_successors = self.infer(sentence)
+            # calculate the head of each word in sentence
+            true_deps = {c: p for p, children in true_successors.items() for c in children}
+            pred_deps = {c: p for p, children in pred_successors.items() for c in children}
+            shot = [true_deps[w] == pred_deps[w] for w in true_deps.keys()]
+            total_shot += shot
+            if verbose:
+                print('infered: ' + str(pred_deps))
+                print('actual:  ' + str(true_deps))
+
+        acc = np.mean(total_shot)
+        return np.mean(acc)
 
 def read_anotated_file(filename):
     f = open(filename)
