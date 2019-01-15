@@ -191,7 +191,13 @@ class DependencyParser:
         return global_featurs
 
     def infer(self, sentence):
-        return None
+        """
+        accepts sentence as a tuple, returns dependency graph
+        :param sentence:
+        :return:
+        """
+        digraph = self.prepare_digraph(sentence)
+        return digraph.mst().successors
 
 
 def read_anotated_file(filename):
@@ -215,3 +221,10 @@ def read_anotated_file(filename):
           f'({len(words_set)} unique) and {len(pos_list)} parts of speech')
     print('POS list: ' + ','.join(pos_list))
     return sentences
+
+
+def measure_accuracy(dp, sentences):
+    for sentence in sentences:
+        infered_dp = dp.infer(sentence)
+        print('infered: ' + str(infered_dp))
+        print('actual:  ' + str(dp.true_graphs_dict[sentence]))
