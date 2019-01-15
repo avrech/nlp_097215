@@ -243,8 +243,8 @@ def read_anotated_file(filename):
             words_list.append(curr_word[2])
             pos_list.add(curr_word[3])
     words_set = set(words_list)
-    print(f'finished analyzing {filename} - found {len(sentences)} sentences, {len(words_list)} words '
-          f'({len(words_set)} unique) and {len(pos_list)} parts of speech')
+    print('finished analyzing {} - found {} sentences, {} words '.format(filename, len(sentences), len(words_list)),
+          '({} unique) and {} parts of speech'.format(len(words_set), len(pos_list), ))
     print('POS list: ' + ','.join(pos_list))
     return sentences
 
