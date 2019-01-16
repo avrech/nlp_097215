@@ -6,6 +6,7 @@ from chu_liu_py2 import Digraph
 import matplotlib.pyplot as plt
 import time
 from tabulate import tabulate
+import os
 class DependencyParser:
     def __init__(self, params, pre_trained_model_file=None):
         """
@@ -26,7 +27,6 @@ class DependencyParser:
             with open(pre_trained_model_file, 'rb') as f:
                 model = pickle.load(f)
             self.true_graphs_dict     = model['true_graphs_dict']
-            self.digraphs_dict        = model['digraphs_dict']
             self.indexed_features     = model['indexed_features']
             self.local_features_dict  = model['local_features_dict']
             self.global_features_dict = model['global_features_dict']
@@ -35,11 +35,10 @@ class DependencyParser:
             self.train_set            = model['train_set']
             self.history              = model['history']
             self.total_train_time     = model['total_train_time']
-            self.init_epoch           = model['final_epoch'] + 1
+            self.init_epoch           = model['final_epoch']
             self.results              = model['results']
         else:
             self.true_graphs_dict = {}
-            self.digraphs_dict = {}
             self.indexed_features = {}
             self.local_features_dict = {}
             self.global_features_dict = {}
@@ -50,7 +49,7 @@ class DependencyParser:
             self.total_train_time = 0
             self.init_epoch = 0
             self.results = dict()
-
+        self.digraphs_dict = {}
 
     def train(self, epochs=10, record_interval=0):
         """
@@ -80,7 +79,8 @@ class DependencyParser:
             for sentence in tqdm(self.train_set, 'Calculating local and global features...'):
                 self.local_features_dict[sentence] = self.calc_local_features(sentence)
                 self.global_features_dict[sentence] = self.calc_global_features(sentence, self.true_graphs_dict[sentence])
-                self.digraphs_dict[sentence] = self.prepare_digraph(sentence)
+        for sentence in tqdm(self.train_set, 'Preparing Digraphs...'):
+            self.digraphs_dict[sentence] = self.prepare_digraph(sentence)
 
         # run Perceptron to find best parameter vector
         # num_of_epochs = self.params['num_of_epochs']
@@ -99,8 +99,8 @@ class DependencyParser:
             # record history:
             if record_interval > 0:
                 if np.mod(n, record_interval) == 0:
-                    train_acc = self.evaluate(self.train_set)
-                    test_acc = self.evaluate(self.test_set)
+                    train_acc, _ = self.evaluate(self.train_set)
+                    test_acc, _ = self.evaluate(self.test_set)
                     self.history.append([n, train_acc, test_acc])
 
         self.last_train_time = time.time() - t_start
@@ -125,15 +125,14 @@ class DependencyParser:
         self.results['Train-set evaluation time [minutes]'] = "{:.2f}".format(train_eval_time / 60)
 
         # Save model to pkl:
-        model_file_name = "saved_models/model_from-{}-trainset-{}-acc-{:.2f}-test_acc-{:.2f}.pkl".format(
-            datetime.datetime.now(),
+        self.model_name = "m{}-{}-acc-{}-test_acc-{}".format(
             len(self.train_set),
-            self.results['final_train_acc'],
-            self.results['final_test_acc'])
+            str(datetime.datetime.now())[:-7].replace(' ','-'),
+            self.results['Train-set accuracy'],
+            self.results['Test-set accuracy'])
 
         model = dict()
         model['true_graphs_dict']     = self.true_graphs_dict
-        model['digraphs_dict']        = self.digraphs_dict
         model['indexed_features']     = self.indexed_features
         model['local_features_dict']  = self.local_features_dict
         model['global_features_dict'] = self.global_features_dict
@@ -145,9 +144,10 @@ class DependencyParser:
         model['final_epoch']          = final_epoch
         model['results']              = self.results
 
-        with open(model_file_name, "wb") as f:
+        model_path = os.path.join('saved_models', self.model_name+".pkl")
+        with open(model_path, "wb") as f:
             pickle.dump(model, f)
-
+        return model_path
 
     def print_results(self):
         print('-------------------------------------------------')
@@ -159,14 +159,15 @@ class DependencyParser:
         if self.history.__len__() == 0:
             print('There is no history to plot')
             return
-        plt.figure(223)
+        fig = plt.figure(223)
         hist = np.array(self.history)
-        plt.plot(hist)
-        plt.legend('train acc', 'test acc')
+        plt.plot(hist[:,0].astype(int), hist[:,1:])
+        plt.legend(['train acc', 'test acc'])
         plt.title('Learning Curve')
         plt.ylabel('Accuracy')
         plt.xlabel('Epochs')
-
+        fig_path = os.path.join('saved_models', self.model_name + "learning_curve.png")
+        fig.savefig(fig_path)
 
     @staticmethod
     def calc_graph(sentence):
@@ -346,25 +347,25 @@ class DependencyParser:
         return np.mean(acc), time.time()-t_start
 
 def read_anotated_file(filename):
-    f = open(filename)
-    sentences = []
-    curr_sentence = []
-    words_list = []
-    pos_list = set()
-    for row in f:
-        if row.rstrip() == '':
-            sentences.append(tuple(curr_sentence))
-            curr_sentence = []
-        else:
-            split_row = row.rstrip().split('\t')
-            curr_word = (int(split_row[0]), int(split_row[6]), split_row[1], split_row[3])
-            curr_sentence.append(curr_word)
-            words_list.append(curr_word[2])
-            pos_list.add(curr_word[3])
-    words_set = set(words_list)
-    print('finished analyzing {} - found {} sentences, {} words '.format(filename, len(sentences), len(words_list)),
-          '({} unique) and {} parts of speech'.format(len(words_set), len(pos_list), ))
-    print('POS list: ' + ','.join(pos_list))
+    with open(filename, 'r') as f:
+        sentences = []
+        curr_sentence = []
+        words_list = []
+        pos_list = set()
+        for row in f:
+            if row.rstrip() == '':
+                sentences.append(tuple(curr_sentence))
+                curr_sentence = []
+            else:
+                split_row = row.rstrip().split('\t')
+                curr_word = (int(split_row[0]), int(split_row[6]), split_row[1], split_row[3])
+                curr_sentence.append(curr_word)
+                words_list.append(curr_word[2])
+                pos_list.add(curr_word[3])
+        words_set = set(words_list)
+        print('finished analyzing {} - found {} sentences, {} words '.format(filename, len(sentences), len(words_list)),
+              '({} unique) and {} parts of speech'.format(len(words_set), len(pos_list), ))
+        print('POS list: ' + ','.join(pos_list))
     return sentences
 
 
@@ -375,6 +376,9 @@ def measure_accuracy(dp, sentences):
         print('actual:  ' + str(dp.true_graphs_dict[sentence]))
 
 if __name__ == '__main__':
+    os.chdir(os.getcwd())
+    if not os.path.isdir('saved_models'):
+        os.mkdir('saved_models')
     params = {
         'train_file': 'train.labeled',
         'train_sentences_max': None,
@@ -382,17 +386,10 @@ if __name__ == '__main__':
         'test_file': 'test.labeled'
     }
 
-    # train_set = read_anotated_file(params['train_file'])[:params['train_sentences_max']]
-    # test_set = read_anotated_file(params['test_file'])[:params['test_sentences_max']]
-
-    dp = DependencyParser(params, pre_trained_model_file=None)
-    dp.train(epochs=2, record_interval=1)
+    ptmf = 'saved_models/m5000-2019-01-16 02:54:32.-acc-0.32-test_acc-0.27.pkl'
+    dp = DependencyParser(params, pre_trained_model_file=ptmf)
+    model_file = dp.train(epochs=1, record_interval=1)
     dp.plot_history()
     dp.print_results()
-    # print('Evaluating test-set...')
-    # test_acc, test_eval_time = dp.evaluate(test_set)
-    #
-    # print('Evaluating train-set...')
-    # train_acc, train_eval_time = dp.evaluate(train_set)
 
     print('finished'.format(datetime.datetime.now()))
