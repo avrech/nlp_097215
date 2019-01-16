@@ -106,3 +106,7 @@ venv.bak/
 # avrech
 *.xml
 .idea/
+*REMOTE*
+*BASE*
+*LOCAL*
+*BACKUP*

@@ -51,7 +51,7 @@ class DependencyParser:
             self.results = dict()
         self.digraphs_dict = {}
 
-    def train(self, epochs=10, record_interval=0):
+    def train(self, epochs=10, record_interval=0, eval_on=0):
         """
         If load model is not None, the dictionaries assumed to be the same,
         and there is no need to calculate them again.
@@ -90,18 +90,21 @@ class DependencyParser:
         print('----------------------------------')
         print('Running perceptron on train_set...')
         print('----------------------------------')
+
         for n in range(self.init_epoch, self.init_epoch + epochs):
-            for sentence in tqdm(self.train_set, 'Epoch no. {}'.format(n+1)):
+            shuffle_idx = np.random.permutation(self.train_set.__len__())
+            for sentence in tqdm([self.train_set[idx] for idx in shuffle_idx], 'Epoch no. {}'.format(n+1)):
                 y_pred = self.digraphs_dict[sentence].mst().successors
                 if y_pred != self.true_graphs_dict[sentence]:
                     new_w = self.param_vec + self.get_features_delta_vec(sentence, y_pred)
                     self.param_vec = new_w
-            # record history:
             if record_interval > 0:
                 if np.mod(n, record_interval) == 0:
-                    train_acc, _ = self.evaluate(self.train_set)
-                    test_acc, _ = self.evaluate(self.test_set)
-                    self.history.append([n, train_acc, test_acc])
+                    trn_sel = np.random.permutation(self.train_set.__len__())
+                    tst_sel = np.random.permutation(self.test_set.__len__())
+                    train_acc, _ = self.evaluate([self.train_set[idx] for idx in trn_sel[:eval_on]])
+                    test_acc, _ = self.evaluate([self.test_set[idx] for idx in tst_sel[:eval_on]])
+                    self.history.append([n, np.mean(train_acc), test_acc])
 
         self.last_train_time = time.time() - t_start
         self.total_train_time += self.last_train_time
@@ -125,11 +128,11 @@ class DependencyParser:
         self.results['Train-set evaluation time [minutes]'] = "{:.2f}".format(train_eval_time / 60)
 
         # Save model to pkl:
-        self.model_name = "m{}-{}-acc-{}-test_acc-{}".format(
+        self.model_name = "m{}-test_acc-{}-acc-{}-from-{}".format(
             len(self.train_set),
-            str(datetime.datetime.now())[:-7].replace(' ','-'),
+            self.results['Test-set accuracy'],
             self.results['Train-set accuracy'],
-            self.results['Test-set accuracy'])
+            str(datetime.datetime.now())[:-7].replace(' ', '-'))
 
         model = dict()
         model['true_graphs_dict']     = self.true_graphs_dict
@@ -142,6 +145,7 @@ class DependencyParser:
         model['history']              = self.history
         model['total_train_time']     = self.total_train_time
         model['final_epoch']          = final_epoch
+        # model['best_acc']             = self.best_acc
         model['results']              = self.results
 
         model_path = os.path.join('saved_models', self.model_name+".pkl")
@@ -385,11 +389,13 @@ if __name__ == '__main__':
         'test_sentences_max': None,
         'test_file': 'test.labeled'
     }
+    # dp = DependencyParser(params, pre_trained_model_file=None)
 
-    ptmf = 'saved_models/m5000-2019-01-16 02:54:32.-acc-0.32-test_acc-0.27.pkl'
-    dp = DependencyParser(params, pre_trained_model_file=ptmf)
-    model_file = dp.train(epochs=1, record_interval=1)
-    dp.plot_history()
-    dp.print_results()
+    model_file = 'saved_models/m5000-2019-01-16-05:03:27-acc-0.46-test_acc-0.31.pkl'
+    for ii in range(15):
+        dp = DependencyParser(params, pre_trained_model_file=model_file)
+        model_file = dp.train(epochs=10, record_interval=5, eval_on=15)
+        dp.plot_history()
+        dp.print_results()
 
     print('finished'.format(datetime.datetime.now()))
