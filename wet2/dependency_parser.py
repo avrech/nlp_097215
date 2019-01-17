@@ -2,17 +2,19 @@ import pickle
 from tqdm import tqdm
 import numpy as np
 import datetime
-from chu_liu_py2 import Digraph
 import matplotlib.pyplot as plt
 import time
 from tabulate import tabulate
 import os
+
+from wet2.chu_liu_py2 import Digraph
+
+
 class DependencyParser:
     def __init__(self, params, pre_trained_model_file=None):
         """
         Initialize the parser.
         :param params: parameters for training.
-        :param record_rate: If > 0, evaluate train-set and test-set accuracy every record_rate epochs.
         :param pre_trained_model_file: pickle file, contains the train_set, it's statistics dictionaries
                            and the corresponding pre-trained param_vec.
                            NOTE: if this parameter is not None, the params[train_file] is ignored,
@@ -23,21 +25,22 @@ class DependencyParser:
         # self.load_model = pre_trained_model
         self.test_set = read_anotated_file(params['test_file'])[:params['test_sentences_max']]
         self.last_train_time = 0
+        self.model_name = None
         if pre_trained_model_file is not None:
             with open(pre_trained_model_file, 'rb') as f:
                 model = pickle.load(f)
-            self.threshold            = model['threshold']
-            self.true_graphs_dict     = model['true_graphs_dict']
-            self.indexed_features     = model['indexed_features']
-            self.local_features_dict  = model['local_features_dict']
+            self.threshold = model['threshold']
+            self.true_graphs_dict = model['true_graphs_dict']
+            self.indexed_features = model['indexed_features']
+            self.local_features_dict = model['local_features_dict']
             self.global_features_dict = model['global_features_dict']
-            self.num_of_features      = model['num_of_features']
-            self.param_vec            = model['param_vec']
-            self.train_set            = model['train_set']
-            self.history              = model['history']
-            self.total_train_time     = model['total_train_time']
-            self.init_epoch           = model['final_epoch']
-            self.results              = model['results']
+            self.num_of_features = model['num_of_features']
+            self.param_vec = model['param_vec']
+            self.train_set = model['train_set']
+            self.history = model['history']
+            self.total_train_time = model['total_train_time']
+            self.init_epoch = model['final_epoch']
+            self.results = model['results']
         else:
             self.threshold = params['threshold']
             self.true_graphs_dict = {}
@@ -63,7 +66,7 @@ class DependencyParser:
         :return:
         """
         t_start = time.time()
-        if self.true_graphs_dict.__len__() == 0: # initialize dictionaries:
+        if self.true_graphs_dict.__len__() == 0:  # initialize dictionaries:
             # calc for each sentence: the true graph, a feature vector for each (h,m) in x, and the digraph
             for sentence in tqdm(self.train_set, 'Calculating train graphs...'):
                 true_graph = self.calc_graph(sentence)
@@ -81,13 +84,13 @@ class DependencyParser:
 
             for sentence in tqdm(self.train_set, 'Calculating local and global features...'):
                 self.local_features_dict[sentence] = self.calc_local_features(sentence)
-                self.global_features_dict[sentence] = self.calc_global_features(sentence, self.true_graphs_dict[sentence])
+                self.global_features_dict[sentence] = \
+                    self.calc_global_features(sentence, self.true_graphs_dict[sentence])
         for sentence in tqdm(self.train_set, 'Preparing Digraphs...'):
             self.digraphs_dict[sentence] = self.prepare_digraph(sentence)
 
         # run Perceptron to find best parameter vector
         # num_of_epochs = self.params['num_of_epochs']
-
 
         print('')
         print('----------------------------------')
@@ -141,18 +144,18 @@ class DependencyParser:
             str(datetime.datetime.now())[11:-7].replace(' ', '-'))
 
         model = dict()
-        model['threshold']            = self.threshold
-        model['true_graphs_dict']     = self.true_graphs_dict
-        model['indexed_features']     = self.indexed_features
-        model['local_features_dict']  = self.local_features_dict
+        model['threshold'] = self.threshold
+        model['true_graphs_dict'] = self.true_graphs_dict
+        model['indexed_features'] = self.indexed_features
+        model['local_features_dict'] = self.local_features_dict
         model['global_features_dict'] = self.global_features_dict
-        model['num_of_features']      = self.num_of_features
-        model['param_vec']            = self.param_vec
-        model['train_set']            = self.train_set
-        model['history']              = self.history
-        model['total_train_time']     = self.total_train_time
-        model['final_epoch']          = final_epoch
-        model['results']              = self.results
+        model['num_of_features'] = self.num_of_features
+        model['param_vec'] = self.param_vec
+        model['train_set'] = self.train_set
+        model['history'] = self.history
+        model['total_train_time'] = self.total_train_time
+        model['final_epoch'] = final_epoch
+        model['results'] = self.results
 
         self.model_dir = os.path.join('saved_models', str(datetime.datetime.now())[:10].replace(' ', '-'))
         model_path = os.path.join(self.model_dir, self.model_name+".pkl")
@@ -175,7 +178,7 @@ class DependencyParser:
             return
         fig = plt.figure(223)
         hist = np.array(self.history)
-        plt.plot(hist[:,0].astype(int), hist[:,1:])
+        plt.plot(hist[:, 0].astype(int), hist[:, 1:])
         plt.legend(['train acc', 'test acc'])
         plt.title('Learning Curve')
         plt.ylabel('Accuracy')
@@ -205,6 +208,7 @@ class DependencyParser:
         """
         getting the list of all features found in train set
         :param sentences:
+        :param threshold:
         :return:
         """
         features_dict = {i: {} for i in range(1, 14)}
@@ -246,7 +250,7 @@ class DependencyParser:
             curr_dict[key] = 0
         curr_dict[key] += 1
 
-    def prepare_digraph(self, sentence): #TODO: verify functionality on non-annotated sentences.
+    def prepare_digraph(self, sentence):  # TODO: verify functionality on non-annotated sentences.
         """
         prepares a full graph on the sentence, with the appropriate scoring function
         :param sentence:
@@ -352,6 +356,7 @@ class DependencyParser:
         """
         Evaluate accuracy of the model as (# true_predictions / # words)
         :param sentences: annotated sentences.
+        :param verbose:
         :return: accuracy in [0,1], inference time.
         """
         t_start = time.time()
@@ -422,8 +427,8 @@ class DependencyParser:
         f_overlap = {k: len(f_set_intersection[k])/len(trn_f_set[k]) for k in trn_f_set.keys() if len(trn_f_set[k]) > 0}
         headers = ['Feature ID', 'Count', 'Overlap']
         statistics = np.array([[k, len(trn_f_set[k]), f_overlap.get(k, 0)] for k in trn_f_set.keys()])
-        total_f = sum(statistics[:,1])
-        total_overlap = sum(statistics[:,1] * statistics[:,2])/total_f
+        total_f = sum(statistics[:, 1])
+        total_overlap = sum(statistics[:, 1] * statistics[:, 2])/total_f
         print('-----------------------------------------------------------')
         print('----------- Dependency-Parser Features Analysis -----------')
         print('-----------------------------------------------------------')
@@ -443,6 +448,7 @@ class DependencyParser:
         # restore true graphs
         self.true_graphs_dict = dict()
         self.true_graphs_dict = true_graph_dict_bak
+
 
 def read_anotated_file(filename):
     with open(filename, 'r') as f:
@@ -474,44 +480,4 @@ def measure_accuracy(dp, sentences):
         print('actual:  ' + str(dp.true_graphs_dict[sentence]))
 
 if __name__ == '__main__':
-    os.chdir(os.getcwd())
-    if not os.path.isdir('saved_models'):
-        os.mkdir('saved_models')
-    params = {
-        'train_file': 'train.labeled',
-        'train_sentences_max': 10, # set to None to use full set
-        'test_sentences_max': 10, # set to None to use full set
-        'test_file': 'test.labeled',
-        'threshold': {4:2, 8:2, 10:2} # set thresholds for features appearance.
-                                      # a feature that appears less than th times is filtered.
-    }
-
-    # Choose path if to continue training some pre-trained model, for example:
-    model_file = 'saved_models/2019-01-17/m100-test_acc-0.31-acc-0.72-from-00:31:10.pkl'
-    # Choose None if to train a new model from scratch:
-    model_file = None
-
-    epochs = 100          # total num of epochs
-    snapshots = 10        # How many times to save model during training
-    record_interval = 5   # evaluate model every num of epochs and store history for learning curve
-    eval_on = 20          # number of random samples to evaluate on.
-    shuffle = True        # shuffle training examples every epoch
-    # At the finale of every training session,
-    # the model evaluates the entire train-set and test-set
-    # and reports results.
-    # you can plot history (learning curve at any time you want.
-    # all .pkl's and .png's files are saved.
-    # the save path is printed in console when save() occurs.
-
-    dp = DependencyParser(params, pre_trained_model_file=model_file)
-    dp.analyze_features()
-    for ii in range(snapshots):
-        dp.train(epochs=np.ceil(epochs / snapshots),
-                 record_interval=record_interval,
-                 eval_on=eval_on,
-                 shuffle=shuffle)
-        dp.print_results()
-
-    dp.plot_history()
-    dp.model_info()
-    print('finished'.format(datetime.datetime.now()))
+    pass
