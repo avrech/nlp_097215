@@ -50,8 +50,9 @@ class DependencyParser:
             self.init_epoch = 0
             self.results = dict()
         self.digraphs_dict = {}
+        self.model_dir = None
 
-    def train(self, epochs=10, record_interval=0, eval_on=0):
+    def train(self, epochs=10, record_interval=0, eval_on=0, shuffle=True):
         """
         If load model is not None, the dictionaries assumed to be the same,
         and there is no need to calculate them again.
@@ -91,8 +92,11 @@ class DependencyParser:
         print('Running perceptron on train_set...')
         print('----------------------------------')
 
-        for n in range(self.init_epoch, self.init_epoch + epochs):
-            shuffle_idx = np.random.permutation(self.train_set.__len__())
+        for n in np.arange(self.init_epoch, self.init_epoch + epochs):
+            if shuffle:
+                shuffle_idx = np.random.permutation(self.train_set.__len__())
+            else:
+                shuffle_idx = np.arange(self.train_set.__len__())
             for sentence in tqdm([self.train_set[idx] for idx in shuffle_idx], 'Epoch no. {}'.format(n+1)):
                 y_pred = self.digraphs_dict[sentence].mst().successors
                 if y_pred != self.true_graphs_dict[sentence]:
@@ -132,7 +136,7 @@ class DependencyParser:
             len(self.train_set),
             self.results['Test-set accuracy'],
             self.results['Train-set accuracy'],
-            str(datetime.datetime.now())[:-7].replace(' ', '-'))
+            str(datetime.datetime.now())[11:-7].replace(' ', '-'))
 
         model = dict()
         model['true_graphs_dict']     = self.true_graphs_dict
@@ -145,12 +149,15 @@ class DependencyParser:
         model['history']              = self.history
         model['total_train_time']     = self.total_train_time
         model['final_epoch']          = final_epoch
-        # model['best_acc']             = self.best_acc
         model['results']              = self.results
 
-        model_path = os.path.join('saved_models', self.model_name+".pkl")
+        self.model_dir = os.path.join('saved_models', str(datetime.datetime.now())[:10].replace(' ', '-'))
+        model_path = os.path.join(self.model_dir, self.model_name+".pkl")
+        if not os.path.isdir(self.model_dir):
+            os.mkdir(self.model_dir)
         with open(model_path, "wb") as f:
             pickle.dump(model, f)
+        print('Save model to ' + model_path)
         return model_path
 
     def print_results(self):
@@ -170,8 +177,12 @@ class DependencyParser:
         plt.title('Learning Curve')
         plt.ylabel('Accuracy')
         plt.xlabel('Epochs')
-        fig_path = os.path.join('saved_models', self.model_name + "learning_curve.png")
+        fig_path = os.path.join(self.model_dir, self.model_name + "-learning_curve.png")
+        if not os.path.isdir(self.model_dir):
+            os.mkdir(self.model_dir)
+
         fig.savefig(fig_path)
+        print('Save figure to ' + fig_path)
 
     @staticmethod
     def calc_graph(sentence):
@@ -350,6 +361,60 @@ class DependencyParser:
         acc = np.mean(total_shot)
         return np.mean(acc), time.time()-t_start
 
+    def model_info(self):
+        """
+        print feature statistics according to homework guidelines.
+        :return: None
+        """
+        # feature_statistics = {k: len(v) for k, v in dp.indexed_features.items()}
+        feature_id = ['Feature ID'] + [str(k) for k in self.indexed_features.keys()]
+        feature_cnt = ['Counts'] + [str(len(v)) for v in self.indexed_features.values()]
+        print('----------------------------------------------')
+        print('----------- Dependency-Parser Info -----------')
+        print('----------------------------------------------')
+        print(tabulate([feature_cnt], headers=feature_id, tablefmt='orgtbl', numalign='left'))
+
+    def analyze_features(self):
+        """
+        This function extract features from the train-set and test-set,
+        and analyze the statistics. It reports the overlap between the distributions.
+        It can help to decide how to select or design features ad-hoc for maximizing
+        the test accuracy.
+        Features that do not appear in the test-set are probably useless.
+        :return: None
+        """
+        # calc for each sentence:
+        # the true graph,
+        # a feature vector for each (h,m) in x,
+        # and the digraph
+        true_graph_dict_bak = self.true_graphs_dict
+        self.true_graphs_dict = dict()
+        for sentence in tqdm(self.train_set + self.test_set, 'Calculate true graphs for features analysis'):
+            true_graph = self.calc_graph(sentence)
+            self.true_graphs_dict[sentence] = true_graph
+
+        trn_features = self.extract_features(self.train_set)
+        tst_features = self.extract_features(self.test_set)
+        trn_f_set = {k: set(f.keys()) for k, f in trn_features.items()}
+        tst_f_set = {k: set(f.keys()) for k, f in tst_features.items()}
+        # The common features in train and test:
+        f_set_intersection = {k: trn_f_set[k] & tst_f_set[k] for k in trn_f_set.keys()}
+        # The efficiency per feature type:
+        f_overlap = {k: len(f_set_intersection[k])/len(trn_f_set[k]) for k in trn_f_set.keys() if len(trn_f_set[k]) > 0}
+        headers = ['Feature ID', 'Count', 'Overlap']
+        statistics = np.array([[k, len(trn_f_set[k]), f_overlap.get(k, 0)] for k in trn_f_set.keys()])
+        total_f = sum(statistics[:,1])
+        total_overlap = sum(statistics[:,1] * statistics[:,2])/total_f
+        print('-----------------------------------------------------------')
+        print('----------- Dependency-Parser Features Analysis -----------')
+        print('-----------------------------------------------------------')
+        print(tabulate(statistics, headers=headers, tablefmt='orgtbl', numalign='left'))
+        print('Total Features in Train-Set: ', int(total_f))
+        print('Total Overlap: {:.2f}'.format(total_overlap))
+        # restore true graphs
+        self.true_graphs_dict = dict()
+        self.true_graphs_dict = true_graph_dict_bak
+
 def read_anotated_file(filename):
     with open(filename, 'r') as f:
         sentences = []
@@ -385,17 +450,37 @@ if __name__ == '__main__':
         os.mkdir('saved_models')
     params = {
         'train_file': 'train.labeled',
-        'train_sentences_max': None,
-        'test_sentences_max': None,
+        'train_sentences_max': None, # set to None to use full set
+        'test_sentences_max': None, # set to None to use full set
         'test_file': 'test.labeled'
     }
-    # dp = DependencyParser(params, pre_trained_model_file=None)
 
-    model_file = 'saved_models/m5000-2019-01-16-05:03:27-acc-0.46-test_acc-0.31.pkl'
-    for ii in range(15):
-        dp = DependencyParser(params, pre_trained_model_file=model_file)
-        model_file = dp.train(epochs=10, record_interval=5, eval_on=15)
-        dp.plot_history()
+    # Choose if to continue training some pre-trained model, for example:
+    model_file = 'saved_models/2019-01-17/m100-test_acc-0.31-acc-0.72-from-00:31:10.pkl'
+    # Choose if to train a new model from scratch:
+    model_file = None
+
+    epochs = 50          # total num of epochs
+    snapshots = 5        # How many times to save model during training
+    record_interval = 5  # evaluate model every num of epochs and store history for learning curve
+    eval_on = 15         # number of random samples to evaluate on.
+    shuffle = True       # shuffle training examples every epoch
+    # At the finale of every training session,
+    # the model evaluates the entire train-set and test-set
+    # and reports results.
+    # you can plot history (learning curve at any time you want.
+    # all .pkl's and .png's files are saved.
+    # the save path is printed in console when save() occurs.
+
+    dp = DependencyParser(params, pre_trained_model_file=model_file)
+    dp.analyze_features()
+    for ii in range(snapshots):
+        dp.train(epochs=np.ceil(epochs / snapshots),
+                 record_interval=record_interval,
+                 eval_on=eval_on,
+                 shuffle=shuffle)
         dp.print_results()
 
+    dp.plot_history()
+    dp.model_info()
     print('finished'.format(datetime.datetime.now()))
