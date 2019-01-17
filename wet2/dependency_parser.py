@@ -211,7 +211,7 @@ class DependencyParser:
         :param threshold:
         :return:
         """
-        features_dict = {i: {} for i in range(1, 15)}
+        features_dict = {i: {} for i in range(1, 16)}
         for sentence in tqdm(sentences, 'Extracting features...'):
             # TODO: get features for the full graph?
             curr_graph = self.true_graphs_dict[sentence]
@@ -223,6 +223,10 @@ class DependencyParser:
                     else:
                         p_word = sentence[p_node-1][2]
                         p_pos = sentence[p_node-1][3]
+                    if p_node < len(sentence):
+                        p_next_pos = sentence[p_node][3]
+                    else:
+                        p_next_pos = None
                     c_word = sentence[c_node-1][2]
                     c_pos = sentence[c_node-1][3]
                     # for the basic model we use the feature set 1-13, except 7,9,11,12.
@@ -236,6 +240,7 @@ class DependencyParser:
                     self.safe_add(features_dict[10], (p_word, p_pos, c_pos))    # 10
                     self.safe_add(features_dict[13], (p_pos, c_pos))            # 13
                     self.safe_add(features_dict[14], (p_node - c_node))         # distance
+                    self.safe_add(features_dict[15], (p_pos, p_next_pos))       # p_pos and next pos
         # Thresholding:
         if threshold is not None:
             # Filter features that appear in dict:
@@ -311,6 +316,10 @@ class DependencyParser:
                 else:
                     p_word = sentence[p_node-1][2]
                     p_pos = sentence[p_node-1][3]
+                if p_node < len(sentence):
+                    p_next_pos = sentence[p_node][3]
+                else:
+                    p_next_pos = None
                 c_word = sentence[c_node-1][2]
                 c_pos = sentence[c_node-1][3]
                 local_features[(p_node, c_node)] = [self.indexed_features[1].get((p_word, p_pos), None)]
@@ -323,6 +332,7 @@ class DependencyParser:
                 local_features[(p_node, c_node)] += [self.indexed_features[10].get((p_word, p_pos, c_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[13].get((p_pos, c_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[14].get((p_node - c_node), None)]
+                local_features[(p_node, c_node)] += [self.indexed_features[15].get((p_pos, p_next_pos), None)]
 
                 local_features[(p_node, c_node)] = [x for x in local_features[(p_node, c_node)] if x is not None]
         return local_features
