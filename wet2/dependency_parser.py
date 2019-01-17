@@ -369,6 +369,16 @@ class DependencyParser:
                 print('actual:  ' + str(true_deps))
 
         acc = np.mean(total_shot)
+
+        """
+        Calculate confusion matrix.
+        format:
+        confusion_mat[p_pos][c_pos][(p_word, c_word)] = # of failures
+        """
+        
+        pos_set = set([w[3] for s in sentences for w in s])
+        confusion_mat = {p_pos : {c_pos: dict() for c_pos in pos_set} for p_pos in pos_set}
+
         return np.mean(acc), time.time()-t_start
 
     def model_info(self):
@@ -469,8 +479,8 @@ if __name__ == '__main__':
         os.mkdir('saved_models')
     params = {
         'train_file': 'train.labeled',
-        'train_sentences_max': None, # set to None to use full set
-        'test_sentences_max': None, # set to None to use full set
+        'train_sentences_max': 10, # set to None to use full set
+        'test_sentences_max': 10, # set to None to use full set
         'test_file': 'test.labeled',
         'threshold': {4:2, 8:2, 10:2} # set thresholds for features appearance.
                                       # a feature that appears less than th times is filtered.
