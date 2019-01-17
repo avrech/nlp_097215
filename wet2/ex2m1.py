@@ -25,7 +25,7 @@ else:
     model_file = "saved_models/2019-01-17/m5000-test_acc-0.25-acc-0.29-from-22:50:17.pkl"
 
 epochs = 1  # total num of epochs
-snapshots = 1  # How many times to save model during training (at least 1)
+snapshots = 1  # How many times to save model during training. if = 0 - do not train at all.
 record_interval = 0  # evaluate model every num of epochs and store history for learning curve
 eval_on = 20  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
