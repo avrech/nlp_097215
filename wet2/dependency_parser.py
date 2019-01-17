@@ -7,7 +7,7 @@ import time
 from tabulate import tabulate
 import os
 
-from wet2.chu_liu_py2 import Digraph
+from chu_liu_py2 import Digraph
 
 
 class DependencyParser:
@@ -111,8 +111,8 @@ class DependencyParser:
                 if np.mod(n, record_interval) == 0:
                     trn_sel = np.random.permutation(self.train_set.__len__())
                     tst_sel = np.random.permutation(self.test_set.__len__())
-                    train_acc, _ = self.evaluate([self.train_set[idx] for idx in trn_sel[:eval_on]])
-                    test_acc, _ = self.evaluate([self.test_set[idx] for idx in tst_sel[:eval_on]])
+                    train_acc, _, _ = self.evaluate([self.train_set[idx] for idx in trn_sel[:eval_on]])
+                    test_acc, _, _ = self.evaluate([self.test_set[idx] for idx in tst_sel[:eval_on]])
                     self.history.append([n, np.mean(train_acc), test_acc])
 
         self.last_train_time = time.time() - t_start
@@ -121,8 +121,8 @@ class DependencyParser:
         self.init_epoch += epochs
 
         # Evaluate train-set and test-set
-        train_acc, train_eval_time = self.evaluate(self.train_set)
-        test_acc, test_eval_time = self.evaluate(self.test_set)
+        train_acc, train_eval_time, _ = self.evaluate(self.train_set)
+        test_acc, test_eval_time, _ = self.evaluate(self.test_set)
 
         # update results
         self.results['Train-set size'] = len(self.train_set)
@@ -365,16 +365,36 @@ class DependencyParser:
         digraph = self.prepare_digraph(sentence)
         return digraph.mst().successors
 
-    def evaluate(self, sentences, verbose=False):
+    def evaluate(self, sentences, verbose=False, calc_confusion_matrix=False):
         """
         Evaluate accuracy of the model as (# true_predictions / # words)
         :param sentences: annotated sentences.
-        :param verbose:
+        :param verbose: If True - print the infered and actual dependencies
+        :param calc_confusion_matrix: If True - calculate confusion matrix
         :return: accuracy in [0,1], inference time.
         """
         t_start = time.time()
+        """
+        Calculate confusion matrix.
+        format:
+        confusion_mat[c_pos][true_p_pos][view_point][feature] = # of failures
+        supported view_point's:
+        ------------------------------------------------
+        view_point | feature
+        -----------|------------------------------------
+        'distance' | child_index - parent_index (signed)
+        'pred_pos' | the false predicted parent POS 
+        """
+        confusion_mat = None
+        if calc_confusion_matrix:
+            pos_set = set([w[3] for s in sentences for w in s])
+            confusion_mat = {c_pos: {p_pos: {'distance': dict(),
+                                             'pred_pos': dict()}
+                                     for p_pos in pos_set}
+                             for c_pos in pos_set}
+
         total_shot = []
-        for sentence in sentences:
+        for sentence in tqdm(sentences, 'Evaluating model...'):
             true_successors = self.true_graphs_dict.get(sentence, self.calc_graph(sentence))
             pred_successors = self.infer(sentence)
             # calculate the head of each word in sentence
@@ -386,8 +406,23 @@ class DependencyParser:
                 print('infered: ' + str(pred_deps))
                 print('actual:  ' + str(true_deps))
 
+            if calc_confusion_matrix:
+                """ for each failure, record the following statistics:
+                    given c_pos and p_pos:
+                    # failures as function of distance between c and p
+                    # failures as function of the false predicted parent POS
+                """
+                for w_id in true_deps.keys():
+                    if true_deps[w_id] != pred_deps[w_id]:
+                        c = sentence[w_id-1]
+                        true_p = sentence[true_deps[w_id]-1]
+                        pred_p = sentence[pred_deps[w_id]-1]
+                        self.safe_add(confusion_mat[c[3]][true_p[3]]['distance'], w_id-true_deps[w_id])
+                        self.safe_add(confusion_mat[c[3]][true_p[3]]['pred_pos'], pred_p[3])
+
         acc = np.mean(total_shot)
-        return np.mean(acc), time.time()-t_start
+
+        return np.mean(acc), time.time()-t_start, confusion_mat
 
     def model_info(self):
         """
