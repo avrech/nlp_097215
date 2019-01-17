@@ -2,7 +2,7 @@ import datetime
 import os
 import numpy as np
 
-from wet2.dependency_parser import DependencyParser
+from dependency_parser import DependencyParser
 
 os.chdir(os.getcwd())
 if not os.path.isdir('saved_models'):
