@@ -240,7 +240,7 @@ class DependencyParser:
                     self.safe_add(features_dict[10], (p_word, p_pos, c_pos))    # 10
                     self.safe_add(features_dict[13], (p_pos, c_pos))            # 13
                     self.safe_add(features_dict[14], (p_node - c_node))         # distance
-                    self.safe_add(features_dict[14], (p_pos, p_next_pos))       # p_pos and next pos
+                    self.safe_add(features_dict[15], (p_pos, p_next_pos))       # p_pos and next pos
         # Thresholding:
         if threshold is not None:
             # Filter features that appear in dict:
