@@ -141,7 +141,7 @@ class DependencyParser:
             len(self.train_set),
             self.results['Test-set accuracy'],
             self.results['Train-set accuracy'],
-            str(datetime.datetime.now())[11:-7].replace(' ', '-'))
+            str(datetime.datetime.now())[11:-7].replace(' ', '-').replace(':', '-'))
 
         model = dict()
         model['threshold'] = self.threshold
