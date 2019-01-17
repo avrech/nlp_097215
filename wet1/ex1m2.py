@@ -13,7 +13,7 @@ if __name__ == "__main__":
         'maxiter': 0,
         'test_file': 'test.wtag',
         'test_train_size': 0,
-        'test_set_size': 0,
+        'test_set_size': 1000,
         'affix_precent': 50,
         'beam_min': 10,
         'competition_file': 'comp2.words',
@@ -28,14 +28,14 @@ if __name__ == "__main__":
     # ecvaluate train set
     print('====================== testing accuracy on train data ======================')
     train_infer_start = datetime.datetime.now()
-    train_acc = evaluate(my_model, params['train_file'], params['test_train_size'])
+    train_acc = evaluate(my_model, params['test_file'], params['test_set_size'])
     train_infer_end = datetime.datetime.now()
 
     # tagging competition
-    print('====================== testing accuracy on train data ======================')
-    train_infer_start = datetime.datetime.now()
-    train_acc = tag_file(my_model, params['competition_file'])
-    train_infer_end = datetime.datetime.now()
+    # print('====================== testing accuracy on train data ======================')
+    # train_infer_start = datetime.datetime.now()
+    # train_acc = tag_file(my_model, params['competition_file'])
+    # train_infer_end = datetime.datetime.now()
 
     print('train size,start time,finish time,total time,max iter,last L(v),train test size,train acc,train infer start,'
           'train infer end,train infer total,test infer start,test infer end,test infer total,test set size,test acc')

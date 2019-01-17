@@ -592,7 +592,7 @@ def compare_files(tagged_file, predicted_file, tags_list):
             print(f'Error in sentence {sentence_index}: different word')
             continue
         tag_comparison = [tagged_sentence[word_idx][1] == pred_sentence[word_idx][1]
-                           for word_idx in range(len(tagged_sentence))]
+                          for word_idx in range(len(tagged_sentence))]
         correct_predictions += sum(tag_comparison)
         total_predictions += len(tag_comparison)
         for i, tag_word in enumerate(tagged_sentence):
