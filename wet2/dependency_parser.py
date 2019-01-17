@@ -141,7 +141,7 @@ class DependencyParser:
             len(self.train_set),
             self.results['Test-set accuracy'],
             self.results['Train-set accuracy'],
-            str(datetime.datetime.now())[11:-7].replace(' ', '-'))
+            str(datetime.datetime.now())[11:-7].replace(' ', '-').replace(':', '-'))
 
         model = dict()
         model['threshold'] = self.threshold
@@ -211,7 +211,7 @@ class DependencyParser:
         :param threshold:
         :return:
         """
-        features_dict = {i: {} for i in range(1, 14)}
+        features_dict = {i: {} for i in range(1, 15)}
         for sentence in tqdm(sentences, 'Extracting features...'):
             # TODO: get features for the full graph?
             curr_graph = self.true_graphs_dict[sentence]
@@ -235,6 +235,7 @@ class DependencyParser:
                     self.safe_add(features_dict[8], (p_pos, c_word, c_pos))     # 8
                     self.safe_add(features_dict[10], (p_word, p_pos, c_pos))    # 10
                     self.safe_add(features_dict[13], (p_pos, c_pos))            # 13
+                    self.safe_add(features_dict[14], (p_node - c_node))         # distance
         # Thresholding:
         if threshold is not None:
             # Filter features that appear in dict:
@@ -321,6 +322,8 @@ class DependencyParser:
                 local_features[(p_node, c_node)] += [self.indexed_features[8].get((p_pos, c_word, c_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[10].get((p_word, p_pos, c_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[13].get((p_pos, c_pos), None)]
+                local_features[(p_node, c_node)] += [self.indexed_features[14].get((p_node - c_node), None)]
+
                 local_features[(p_node, c_node)] = [x for x in local_features[(p_node, c_node)] if x is not None]
         return local_features
 
