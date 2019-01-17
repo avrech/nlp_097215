@@ -1,10 +1,11 @@
 import datetime
 import os
 import numpy as np
-
+import sys
+sys.path.append(os.getcwd())
+os.chdir(os.getcwd())
 from dependency_parser import DependencyParser
 
-os.chdir(os.getcwd())
 if not os.path.isdir('saved_models'):
     os.mkdir('saved_models')
 params = {
@@ -16,7 +17,7 @@ params = {
     # a feature that appears less than th times is filtered.
 }
 
-if False:
+if True:
     # Choose None if to train a new model from scratch:
     model_file = None
 else:
@@ -37,14 +38,13 @@ shuffle = True  # shuffle training examples every epoch
 
 dp = DependencyParser(params, pre_trained_model_file=model_file)
 dp.analyze_features()
-_, _, test_confusion_mat = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
 for ii in range(snapshots):
     dp.train(epochs=np.ceil(epochs / snapshots),
              record_interval=record_interval,
              eval_on=eval_on,
              shuffle=shuffle)
     dp.print_results()
-
+_, _, test_confusion_mat = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
 dp.plot_history()
 dp.model_info()
 print('finished'.format(datetime.datetime.now()))
