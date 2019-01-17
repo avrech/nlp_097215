@@ -26,6 +26,7 @@ class DependencyParser:
         if pre_trained_model_file is not None:
             with open(pre_trained_model_file, 'rb') as f:
                 model = pickle.load(f)
+            self.threshold            = model['threshold']
             self.true_graphs_dict     = model['true_graphs_dict']
             self.indexed_features     = model['indexed_features']
             self.local_features_dict  = model['local_features_dict']
@@ -38,6 +39,7 @@ class DependencyParser:
             self.init_epoch           = model['final_epoch']
             self.results              = model['results']
         else:
+            self.threshold = params['threshold']
             self.true_graphs_dict = {}
             self.indexed_features = {}
             self.local_features_dict = {}
@@ -52,7 +54,7 @@ class DependencyParser:
         self.digraphs_dict = {}
         self.model_dir = None
 
-    def train(self, epochs=10, record_interval=0, eval_on=0, shuffle=True):
+    def train(self, epochs=10, record_interval=0, eval_on=0, shuffle=True, threshold=None):
         """
         If load model is not None, the dictionaries assumed to be the same,
         and there is no need to calculate them again.
@@ -67,7 +69,7 @@ class DependencyParser:
                 true_graph = self.calc_graph(sentence)
                 self.true_graphs_dict[sentence] = true_graph
 
-            features_dict = self.extract_features(self.train_set)
+            features_dict = self.extract_features(self.train_set, threshold=threshold)
             curr_index = 0
             for k in features_dict:
                 self.indexed_features[k] = {}
@@ -139,6 +141,7 @@ class DependencyParser:
             str(datetime.datetime.now())[11:-7].replace(' ', '-'))
 
         model = dict()
+        model['threshold']            = self.threshold
         model['true_graphs_dict']     = self.true_graphs_dict
         model['indexed_features']     = self.indexed_features
         model['local_features_dict']  = self.local_features_dict
@@ -198,7 +201,7 @@ class DependencyParser:
             graph[word[1]].append(word[0])
         return graph
 
-    def extract_features(self, sentences):
+    def extract_features(self, sentences, threshold=None):
         """
         getting the list of all features found in train set
         :param sentences:
@@ -228,6 +231,13 @@ class DependencyParser:
                     self.safe_add(features_dict[8], (p_pos, c_word, c_pos))     # 8
                     self.safe_add(features_dict[10], (p_word, p_pos, c_pos))    # 10
                     self.safe_add(features_dict[13], (p_pos, c_pos))            # 13
+        # Thresholding:
+        if threshold is not None:
+            # Filter features that appear in dict:
+            # a feature that appears less than th times is filtered
+            for f, th in threshold.items():
+                features_dict[f] = {k: v for k, v in features_dict[f].items() if v >= th}
+
         return features_dict
 
     @staticmethod
@@ -392,8 +402,7 @@ class DependencyParser:
         for sentence in tqdm(self.train_set + self.test_set, 'Calculate true graphs for features analysis'):
             true_graph = self.calc_graph(sentence)
             self.true_graphs_dict[sentence] = true_graph
-
-        trn_features = self.extract_features(self.train_set)
+        trn_features = self.extract_features(self.train_set, threshold=self.threshold)
         tst_features = self.extract_features(self.test_set)
         trn_f_set = {k: set(f.keys()) for k, f in trn_features.items()}
         tst_f_set = {k: set(f.keys()) for k, f in tst_features.items()}
@@ -411,6 +420,16 @@ class DependencyParser:
         print(tabulate(statistics, headers=headers, tablefmt='orgtbl', numalign='left'))
         print('Total Features in Train-Set: ', int(total_f))
         print('Total Overlap: {:.2f}'.format(total_overlap))
+
+        """
+        Feature 8 is very sparse, and has 0.15 overlap
+        see features sorted by occurance helps to define threshold."""
+
+        from operator import itemgetter
+        trn_f_sorted = dict()
+        for f in trn_features.keys():
+            trn_f_sorted[f] = {k: v for k, v in sorted(trn_features[f].items(), key=itemgetter(1), reverse=True)}
+
         # restore true graphs
         self.true_graphs_dict = dict()
         self.true_graphs_dict = true_graph_dict_bak
@@ -452,19 +471,21 @@ if __name__ == '__main__':
         'train_file': 'train.labeled',
         'train_sentences_max': None, # set to None to use full set
         'test_sentences_max': None, # set to None to use full set
-        'test_file': 'test.labeled'
+        'test_file': 'test.labeled',
+        'threshold': {4:2, 8:2, 10:2} # set thresholds for features appearance.
+                                      # a feature that appears less than th times is filtered.
     }
 
-    # Choose if to continue training some pre-trained model, for example:
+    # Choose path if to continue training some pre-trained model, for example:
     model_file = 'saved_models/2019-01-17/m100-test_acc-0.31-acc-0.72-from-00:31:10.pkl'
-    # Choose if to train a new model from scratch:
+    # Choose None if to train a new model from scratch:
     model_file = None
 
-    epochs = 50          # total num of epochs
-    snapshots = 5        # How many times to save model during training
-    record_interval = 5  # evaluate model every num of epochs and store history for learning curve
-    eval_on = 15         # number of random samples to evaluate on.
-    shuffle = True       # shuffle training examples every epoch
+    epochs = 100          # total num of epochs
+    snapshots = 10        # How many times to save model during training
+    record_interval = 5   # evaluate model every num of epochs and store history for learning curve
+    eval_on = 20          # number of random samples to evaluate on.
+    shuffle = True        # shuffle training examples every epoch
     # At the finale of every training session,
     # the model evaluates the entire train-set and test-set
     # and reports results.
