@@ -18,15 +18,15 @@ params = {
     # a feature that appears less than th times is filtered.
 }
 
-if True:
+if False:
     # Choose None if to train a new model from scratch:
     model_file = None
 else:
     # Choose path if to continue training some pre-trained model, for example:
-    model_file = "saved_models/2019-01-17/m5000-test_acc-0.25-acc-0.29-from-22:50:17.pkl"
+    model_file = 'saved_models/2019-01-18/thresholded-m5000-test_acc-0.64-acc-0.74-from-09-06-29.pkl'
 
 epochs = 100  # total num of epochs
-snapshots = 10  # How many times to save model during training. if = 0 - do not train at all.
+snapshots = 0  # How many times to save model during training. if = 0 - do not train at all.
 record_interval = 5  # evaluate model every num of epochs and store history for learning curve
 eval_on = 100  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
@@ -47,7 +47,11 @@ for ii in range(snapshots):
              shuffle=shuffle,
              model_description=model_description)
     dp.print_results()
-_, _, test_confusion_mat = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
+_, _, test_cm = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
+dp.print_confusion_matrix(test_cm, print_to_csv=True, csv_id='test')
+_, _, train_cm = dp.evaluate(dp.train_set, calc_confusion_matrix=True)
+dp.print_confusion_matrix(train_cm, print_to_csv=True, csv_id='train')
+
 dp.plot_history()
 dp.model_info()
 print('finished'.format(datetime.datetime.now()))
