@@ -108,7 +108,7 @@ class DependencyParser:
                     new_w = self.param_vec + self.get_features_delta_vec(sentence, y_pred)
                     self.param_vec = new_w
             if record_interval > 0:
-                if np.mod(n, record_interval) == 0:
+                if np.mod(n+1, record_interval) == 0:
                     trn_sel = np.random.permutation(self.train_set.__len__())
                     tst_sel = np.random.permutation(self.test_set.__len__())
                     train_acc, _, _ = self.evaluate([self.train_set[idx] for idx in trn_sel[:eval_on]])

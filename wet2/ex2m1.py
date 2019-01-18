@@ -30,7 +30,7 @@ snapshots = 10  # How many times to save model during training. if = 0 - do not 
 record_interval = 5  # evaluate model every num of epochs and store history for learning curve
 eval_on = 100  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
-model_description = 'thresholded' # give a short description for model_name prefix
+model_description = 'thresholded'  # give a short description for model_name prefix
 # At the finale of every training session,
 # the model evaluates the entire train-set and test-set
 # and reports results.
@@ -41,7 +41,7 @@ model_description = 'thresholded' # give a short description for model_name pref
 dp = DependencyParser(params, pre_trained_model_file=model_file)
 dp.analyze_features()
 for ii in range(snapshots):
-    dp.train(epochs=np.ceil(epochs / snapshots),
+    dp.train(epochs=int(np.ceil(epochs / snapshots)),
              record_interval=record_interval,
              eval_on=eval_on,
              shuffle=shuffle,
