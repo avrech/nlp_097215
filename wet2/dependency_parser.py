@@ -163,8 +163,8 @@ class DependencyParser:
         model_path = os.path.join(self.model_dir, self.model_name+".pkl")
         if not os.path.isdir(self.model_dir):
             os.mkdir(self.model_dir)
-        with open(model_path, "wb") as f:
-            pickle.dump(model, f)
+        # with open(model_path, "wb") as f:
+        #     pickle.dump(model, f)
         print('Save model to ' + model_path)
         return model_path
 
@@ -206,6 +206,16 @@ class DependencyParser:
             graph[word[1]].append(word[0])
         return graph
 
+    @staticmethod
+    def get_discretize_sentence_len(sentence):
+        if len(sentence) < 30:
+            sentence_len = len(sentence)
+        elif len(sentence) < 100:
+            sentence_len = len(sentence) - (len(sentence) % 10)
+        else:
+            sentence_len = len(sentence) - (len(sentence) % 100)
+        return sentence_len
+
     def extract_features(self, sentences, threshold=None):
         """
         getting the list of all features found in train set
@@ -213,9 +223,10 @@ class DependencyParser:
         :param threshold:
         :return:
         """
-        features_dict = {i: {} for i in range(1, 16)}
+        features_dict = {i: {} for i in range(1, 18)}
+        distances = set()
         for sentence in tqdm(sentences, 'Extracting features...'):
-            # TODO: get features for the full graph?
+            sentence_len = self.get_discretize_sentence_len(sentence)
             curr_graph = self.true_graphs_dict[sentence]
             for p_node in curr_graph:
                 for c_node in curr_graph[p_node]:
@@ -231,6 +242,7 @@ class DependencyParser:
                         p_next_pos = None
                     c_word = sentence[c_node-1][2]
                     c_pos = sentence[c_node-1][3]
+                    distance = p_node - c_node
                     # for the basic model we use the feature set 1-13, except 7,9,11,12.
                     self.safe_add(features_dict[1], (p_word, p_pos))            # 1
                     self.safe_add(features_dict[2], p_word)                     # 2
@@ -241,8 +253,21 @@ class DependencyParser:
                     self.safe_add(features_dict[8], (p_pos, c_word, c_pos))     # 8
                     self.safe_add(features_dict[10], (p_word, p_pos, c_pos))    # 10
                     self.safe_add(features_dict[13], (p_pos, c_pos))            # 13
-                    self.safe_add(features_dict[14], (p_node - c_node))         # distance
+                    self.safe_add(features_dict[14], distance)                  # distance
                     self.safe_add(features_dict[15], (p_pos, p_next_pos))       # p_pos and next pos
+                    self.safe_add(features_dict[16], (p_pos, c_pos, distance))  # distance
+                    self.safe_add(features_dict[17], sentence_len)  # distance
+                    distances.add(distance)
+        # add features for all pos combinations (negative features)
+        distances = [i - 20 for i in range(42)]
+        pos_list = [pos for pos in features_dict[3]]
+        for pos1 in pos_list:
+            for pos2 in pos_list:
+                self.safe_add(features_dict[13], (pos1, pos2))
+                self.safe_add(features_dict[15], (pos1, pos2))
+                for distance in distances:
+                    self.safe_add(features_dict[16], (pos1, pos2, distance))
+
         # Thresholding:
         if threshold is not None:
             # Filter features that appear in dict:
@@ -310,6 +335,7 @@ class DependencyParser:
         """
         local_features = {}
         full_graph = self.get_full_graph(sentence)
+        sentence_len = self.get_discretize_sentence_len(sentence)
         for p_node in full_graph:
             for c_node in full_graph[p_node]:
                 if p_node == 0:
@@ -324,6 +350,7 @@ class DependencyParser:
                     p_next_pos = None
                 c_word = sentence[c_node-1][2]
                 c_pos = sentence[c_node-1][3]
+                distance = p_node - c_node
                 local_features[(p_node, c_node)] = [self.indexed_features[1].get((p_word, p_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[2].get(p_word, None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[3].get(p_pos, None)]
@@ -333,8 +360,10 @@ class DependencyParser:
                 local_features[(p_node, c_node)] += [self.indexed_features[8].get((p_pos, c_word, c_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[10].get((p_word, p_pos, c_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[13].get((p_pos, c_pos), None)]
-                local_features[(p_node, c_node)] += [self.indexed_features[14].get((p_node - c_node), None)]
+                local_features[(p_node, c_node)] += [self.indexed_features[14].get(distance, None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[15].get((p_pos, p_next_pos), None)]
+                local_features[(p_node, c_node)] += [self.indexed_features[16].get((p_pos, c_pos, distance), None)]
+                local_features[(p_node, c_node)] += [self.indexed_features[17].get(sentence_len, None)]
 
                 local_features[(p_node, c_node)] = [x for x in local_features[(p_node, c_node)] if x is not None]
         return local_features

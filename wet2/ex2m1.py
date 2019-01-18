@@ -2,10 +2,10 @@ import datetime
 import os
 import numpy as np
 import sys
+from dependency_parser import DependencyParser
 cur_file_path = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(cur_file_path)
 os.chdir(cur_file_path)
-from dependency_parser import DependencyParser
 
 if not os.path.isdir('saved_models'):
     os.mkdir('saved_models')
@@ -25,7 +25,7 @@ else:
     # Choose path if to continue training some pre-trained model, for example:
     model_file = "saved_models/2019-01-17/m5000-test_acc-0.25-acc-0.29-from-22:50:17.pkl"
 
-epochs = 100  # total num of epochs
+epochs = 20  # total num of epochs
 snapshots = 10  # How many times to save model during training. if = 0 - do not train at all.
 record_interval = 5  # evaluate model every num of epochs and store history for learning curve
 eval_on = 100  # number of random samples to evaluate on.
