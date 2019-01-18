@@ -25,11 +25,12 @@ else:
     # Choose path if to continue training some pre-trained model, for example:
     model_file = "saved_models/2019-01-17/m5000-test_acc-0.25-acc-0.29-from-22:50:17.pkl"
 
-epochs = 1  # total num of epochs
-snapshots = 1  # How many times to save model during training. if = 0 - do not train at all.
-record_interval = 0  # evaluate model every num of epochs and store history for learning curve
-eval_on = 20  # number of random samples to evaluate on.
+epochs = 100  # total num of epochs
+snapshots = 10  # How many times to save model during training. if = 0 - do not train at all.
+record_interval = 5  # evaluate model every num of epochs and store history for learning curve
+eval_on = 100  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
+model_description = 'thresholded' # give a short description for model_name prefix
 # At the finale of every training session,
 # the model evaluates the entire train-set and test-set
 # and reports results.
@@ -43,7 +44,8 @@ for ii in range(snapshots):
     dp.train(epochs=np.ceil(epochs / snapshots),
              record_interval=record_interval,
              eval_on=eval_on,
-             shuffle=shuffle)
+             shuffle=shuffle,
+             model_description=model_description)
     dp.print_results()
 _, _, test_confusion_mat = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
 dp.plot_history()

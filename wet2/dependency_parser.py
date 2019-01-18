@@ -57,7 +57,7 @@ class DependencyParser:
         self.digraphs_dict = {}
         self.model_dir = None
 
-    def train(self, epochs=10, record_interval=0, eval_on=0, shuffle=True, threshold=None):
+    def train(self, epochs=10, record_interval=0, eval_on=0, shuffle=True, model_description=''):
         """
         If load model is not None, the dictionaries assumed to be the same,
         and there is no need to calculate them again.
@@ -72,7 +72,7 @@ class DependencyParser:
                 true_graph = self.calc_graph(sentence)
                 self.true_graphs_dict[sentence] = true_graph
 
-            features_dict = self.extract_features(self.train_set, threshold=threshold)
+            features_dict = self.extract_features(self.train_set, threshold=self.threshold)
             curr_index = 0
             for k in features_dict:
                 self.indexed_features[k] = {}
@@ -137,7 +137,9 @@ class DependencyParser:
         self.results['Train-set evaluation time [minutes]'] = "{:.2f}".format(train_eval_time / 60)
 
         # Save model to pkl:
-        self.model_name = "m{}-test_acc-{}-acc-{}-from-{}".format(
+        if model_description != '':
+            model_description += '-'
+        self.model_name = model_description + "m{}-test_acc-{}-acc-{}-from-{}".format(
             len(self.train_set),
             self.results['Test-set accuracy'],
             self.results['Train-set accuracy'],
