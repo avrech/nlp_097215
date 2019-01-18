@@ -8,6 +8,8 @@ from tabulate import tabulate
 import os
 
 from chu_liu_py2 import Digraph
+import csv
+
 
 
 class DependencyParser:
@@ -26,6 +28,8 @@ class DependencyParser:
         self.test_set = read_anotated_file(params['test_file'])[:params['test_sentences_max']]
         self.last_train_time = 0
         self.model_name = None
+        self.model_dir = None
+
         if pre_trained_model_file is not None:
             with open(pre_trained_model_file, 'rb') as f:
                 model = pickle.load(f)
@@ -41,6 +45,9 @@ class DependencyParser:
             self.total_train_time = model['total_train_time']
             self.init_epoch = model['final_epoch']
             self.results = model['results']
+            model_path = pre_trained_model_file.split(sep='/')
+            self.model_name = model_path[-1][:-4]
+            self.model_dir  = os.path.join(model_path[0], model_path[1])
         else:
             self.threshold = params['threshold']
             self.true_graphs_dict = {}
@@ -55,7 +62,7 @@ class DependencyParser:
             self.init_epoch = 0
             self.results = dict()
         self.digraphs_dict = {}
-        self.model_dir = None
+        self.confusion_mat = None
 
     def train(self, epochs=10, record_interval=0, eval_on=0, shuffle=True, model_description=''):
         """
@@ -452,8 +459,37 @@ class DependencyParser:
                         self.safe_add(confusion_mat[c[3]][true_p[3]]['pred_pos'], pred_p[3])
 
         acc = np.mean(total_shot)
-
         return np.mean(acc), time.time()-t_start, confusion_mat
+
+    def print_confusion_matrix(self, cm, print_to_csv=True, csv_id='last_eval', print_to_console=False):
+        """
+        Print confusion matrix statistics
+        :return: None
+        """
+        # print failures vs. c_pos, p_pos
+        headers = ['C\P'] + [c_pos for c_pos in cm.keys()] + ['Total']
+        rows =[]
+        for child_pos, parents in cm.items():
+            row = []
+            for parent in parents.values():
+                row.append(sum(parent['distance'].values())) # total_failures
+            row.append(sum(row))
+            rows.append([child_pos] + row)
+        # calculate total failures per parent
+        mat = np.array([[v for v in row[1:]] for row in rows])
+        total_failures_per_parent = np.sum(mat, axis=0)
+        rows.append(['Total:'] + list(total_failures_per_parent))
+        if print_to_console:
+            print('----------------------------------------------------------')
+            print('----------- Dependency-Parser Confusion Matrix -----------')
+            print('----------------------------------------------------------')
+            print(tabulate(rows, headers=headers, tablefmt='orgtbl', numalign='left'))
+
+        if print_to_csv:
+            csv_filename = os.path.join(self.model_dir, self.model_name +'-'+ csv_id + '-confusion_mat.csv')
+            with open(csv_filename, "w") as f:
+                writer = csv.writer(f)
+                writer.writerows([headers] + rows)
 
     def model_info(self):
         """
