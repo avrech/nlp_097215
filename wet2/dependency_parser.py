@@ -11,7 +11,6 @@ from chu_liu_py2 import Digraph
 import csv
 
 
-
 class DependencyParser:
     def __init__(self, params, pre_trained_model_file=None):
         """
@@ -47,7 +46,7 @@ class DependencyParser:
             self.results = model['results']
             model_path = pre_trained_model_file.split(sep='/')
             self.model_name = model_path[-1][:-4]
-            self.model_dir  = os.path.join(model_path[0], model_path[1])
+            self.model_dir = os.path.join(model_path[0], model_path[1])
         else:
             self.threshold = params['threshold']
             self.true_graphs_dict = {}
@@ -307,7 +306,6 @@ class DependencyParser:
         else:
             local_features = self.calc_local_features(sentence)
 
-        # TODO: make sure this works...
         def sentence_graph_score(h, m):
             return self.get_dot_product(local_features[(h, m)], self.param_vec)
 
@@ -468,11 +466,11 @@ class DependencyParser:
         """
         # print failures vs. c_pos, p_pos
         headers = ['C\P'] + [c_pos for c_pos in cm.keys()] + ['Total']
-        rows =[]
+        rows = []
         for child_pos, parents in cm.items():
             row = []
             for parent in parents.values():
-                row.append(sum(parent['distance'].values())) # total_failures
+                row.append(sum(parent['distance'].values()))  # total_failures
             row.append(sum(row))
             rows.append([child_pos] + row)
         # calculate total failures per parent
@@ -486,7 +484,7 @@ class DependencyParser:
             print(tabulate(rows, headers=headers, tablefmt='orgtbl', numalign='left'))
 
         if print_to_csv:
-            csv_filename = os.path.join(self.model_dir, self.model_name +'-'+ csv_id + '-confusion_mat.csv')
+            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + csv_id + '-confusion_mat.csv')
             with open(csv_filename, "w") as f:
                 writer = csv.writer(f)
                 writer.writerows([headers] + rows)
@@ -583,6 +581,7 @@ def measure_accuracy(dp, sentences):
         infered_dp = dp.infer(sentence)
         print('infered: ' + str(infered_dp))
         print('actual:  ' + str(dp.true_graphs_dict[sentence]))
+
 
 if __name__ == '__main__':
     pass
