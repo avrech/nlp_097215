@@ -255,10 +255,10 @@ class DependencyParser:
                     self.safe_add(features_dict[8], (p_pos, c_word, c_pos))     # 8
                     self.safe_add(features_dict[10], (p_word, p_pos, c_pos))    # 10
                     self.safe_add(features_dict[13], (p_pos, c_pos))            # 13
-                    self.safe_add(features_dict[14], distance)                  # distance
-                    self.safe_add(features_dict[15], (p_pos, p_next_pos))       # p_pos and next pos
-                    self.safe_add(features_dict[16], (p_pos, c_pos, distance))  # distance
-                    self.safe_add(features_dict[17], sentence_len)  # distance
+                    self.safe_add(features_dict[14], distance)                  # 14 distance
+                    self.safe_add(features_dict[15], (p_pos, p_next_pos))       # 15 p_pos and next pos
+                    self.safe_add(features_dict[16], (p_pos, c_pos, distance))  # 16 distance
+                    self.safe_add(features_dict[17], sentence_len)              # 17 distance
                     distances.add(distance)
         # add features for all pos combinations (negative features)
         distances = [i - 20 for i in range(42)]
