@@ -24,7 +24,7 @@ class DependencyParser:
         """
         # self.params = params
         # self.load_model = pre_trained_model
-        self.test_set = read_anotated_file(params['test_file'])[:params['test_sentences_max']]
+        self.test_set = read_file(params['test_file'])[:params['test_sentences_max']]
         self.last_train_time = 0
         self.model_name = None
         self.model_dir = None
@@ -52,7 +52,7 @@ class DependencyParser:
             self.indexed_features = {}
             self.num_of_features = 0
             self.param_vec = None
-            self.train_set = read_anotated_file(params['train_file'])[:params['train_sentences_max']]
+            self.train_set = read_file(params['train_file'])[:params['train_sentences_max']]
             self.history = []
             self.total_train_time = 0
             self.init_epoch = 0
@@ -289,7 +289,7 @@ class DependencyParser:
             curr_dict[key] = 0
         curr_dict[key] += 1
 
-    def prepare_digraph(self, sentence):  # TODO: verify functionality on non-annotated sentences.
+    def prepare_digraph(self, sentence):
         """
         prepares a full graph on the sentence, with the appropriate scoring function
         :param sentence:
@@ -553,7 +553,7 @@ class DependencyParser:
         self.true_graphs_dict = true_graph_dict_bak
 
 
-def read_anotated_file(filename):
+def read_file(filename, annotated=True):
     with open(filename, 'r') as f:
         sentences = []
         curr_sentence = []
@@ -565,7 +565,10 @@ def read_anotated_file(filename):
                 curr_sentence = []
             else:
                 split_row = row.rstrip().split('\t')
-                curr_word = (int(split_row[0]), int(split_row[6]), split_row[1], split_row[3])
+                if annotated:
+                    curr_word = (int(split_row[0]), int(split_row[6]), split_row[1], split_row[3])
+                else:
+                    curr_word = (int(split_row[0]), None, split_row[1], split_row[3])
                 curr_sentence.append(curr_word)
                 words_list.append(curr_word[2])
                 pos_list.add(curr_word[3])
@@ -576,11 +579,20 @@ def read_anotated_file(filename):
     return sentences
 
 
-def measure_accuracy(dp, sentences):
-    for sentence in sentences:
-        infered_dp = dp.infer(sentence)
-        print('infered: ' + str(infered_dp))
-        print('actual:  ' + str(dp.true_graphs_dict[sentence]))
+def annotate_file(filename, model):
+    sentences = read_file(filename, annotated=False)
+    clean_name = filename.split('.')[0]
+    new_file = clean_name + '.labeled'
+    with open(new_file, 'w') as f:
+        for sentence in tqdm(sentences, 'annotating sentences'):
+            pred_successors = model.infer(sentence)
+            # calculate the head of each word in sentence
+            pred_deps = {c: p for p, children in pred_successors.items() for c in children}
+            for word in sentence:
+                word_line = '\t'.join([str(word[0]), word[2], '_', word[3], '_', '_',
+                                       str(pred_deps[word[0]]), '_', '_', '_'])
+                f.write(word_line + '\n')
+            f.write('\n')
 
 
 if __name__ == '__main__':
