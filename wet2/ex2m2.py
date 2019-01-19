@@ -16,22 +16,22 @@ params = {
     'test_file': 'test.labeled',
     'threshold': {4: 2, 8: 2, 10: 2},  # set thresholds for features appearance.
     # a feature that appears less than th times is filtered.
-    'features_to_use': [1, 2, 3, 4, 5, 6, 8, 10, 13]
+    'features_to_use': [1, 2, 3, 4, 5, 6, 8, 10, 13, 14, 15, 16, 17]
 }
 
-if True:
+if False:
     # Choose None if to train a new model from scratch:
     model_file = None
 else:
     # Choose path if to continue training some pre-trained model, for example:
-    model_file = 'saved_models/2019-01-19/thresholded-m5000-test_acc-0.73-acc-0.75-from-10-52-31.pkl'
+    model_file = 'saved_models/2019-01-19/m2-m5000-test_acc-0.74-acc-0.77-from-11-16-52.pkl'
 
 epochs = 20  # total num of epochs
 snapshots = 5  # How many times to save model during training. if = 0 - do not train at all.
 record_interval = 5  # evaluate model every num of epochs and store history for learning curve
 eval_on = 100  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
-model_description = 'm1'  # give a short description for model_name prefix
+model_description = 'm2'  # give a short description for model_name prefix
 # At the finale of every training session,
 # the model evaluates the entire train-set and test-set
 # and reports results.

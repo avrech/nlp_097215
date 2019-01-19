@@ -28,6 +28,7 @@ class DependencyParser:
         self.last_train_time = 0
         self.model_name = None
         self.model_dir = None
+        self.features_to_use = params['features_to_use']
 
         if pre_trained_model_file is not None:
             with open(pre_trained_model_file, 'rb') as f:
@@ -275,6 +276,10 @@ class DependencyParser:
             # a feature that appears less than th times is filtered
             for f, th in threshold.items():
                 features_dict[f] = {k: v for k, v in features_dict[f].items() if v >= th}
+
+        for feature_id in features_dict:
+            if feature_id not in self.features_to_use:
+                features_dict[feature_id] = {}
 
         return features_dict
 
