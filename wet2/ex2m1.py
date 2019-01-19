@@ -23,14 +23,14 @@ if False:
     model_file = None
 else:
     # Choose path if to continue training some pre-trained model, for example:
-    model_file = 'saved_models/2019-01-18/thresholded-m5000-test_acc-0.64-acc-0.74-from-09-06-29.pkl'
+    model_file = 'saved_models/2019-01-19/thresholded-m5000-test_acc-0.73-acc-0.75-from-10-52-31.pkl'
 
 epochs = 20  # total num of epochs
-snapshots = 0  # How many times to save model during training. if = 0 - do not train at all.
+snapshots = 5  # How many times to save model during training. if = 0 - do not train at all.
 record_interval = 5  # evaluate model every num of epochs and store history for learning curve
 eval_on = 100  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
-model_description = 'thresholded'  # give a short description for model_name prefix
+model_description = 'm1'  # give a short description for model_name prefix
 # At the finale of every training session,
 # the model evaluates the entire train-set and test-set
 # and reports results.

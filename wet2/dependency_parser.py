@@ -35,8 +35,6 @@ class DependencyParser:
             self.threshold = model['threshold']
             self.true_graphs_dict = model['true_graphs_dict']
             self.indexed_features = model['indexed_features']
-            self.local_features_dict = model['local_features_dict']
-            self.global_features_dict = model['global_features_dict']
             self.num_of_features = model['num_of_features']
             self.param_vec = model['param_vec']
             self.train_set = model['train_set']
@@ -51,8 +49,6 @@ class DependencyParser:
             self.threshold = params['threshold']
             self.true_graphs_dict = {}
             self.indexed_features = {}
-            self.local_features_dict = {}
-            self.global_features_dict = {}
             self.num_of_features = 0
             self.param_vec = None
             self.train_set = read_anotated_file(params['train_file'])[:params['train_sentences_max']]
@@ -60,6 +56,8 @@ class DependencyParser:
             self.total_train_time = 0
             self.init_epoch = 0
             self.results = dict()
+        self.local_features_dict = {}
+        self.global_features_dict = {}
         self.digraphs_dict = {}
         self.confusion_mat = None
 
@@ -88,10 +86,9 @@ class DependencyParser:
             self.num_of_features = curr_index
             self.param_vec = np.zeros(self.num_of_features)
 
-            for sentence in tqdm(self.train_set, 'Calculating local and global features...'):
-                self.local_features_dict[sentence] = self.calc_local_features(sentence)
-                self.global_features_dict[sentence] = \
-                    self.calc_global_features(sentence, self.true_graphs_dict[sentence])
+        for sentence in tqdm(self.train_set, 'Calculating local and global features...'):
+            self.local_features_dict[sentence] = self.calc_local_features(sentence)
+            self.global_features_dict[sentence] = self.calc_global_features(sentence, self.true_graphs_dict[sentence])
         for sentence in tqdm(self.train_set, 'Preparing Digraphs...'):
             self.digraphs_dict[sentence] = self.prepare_digraph(sentence)
 
@@ -155,8 +152,6 @@ class DependencyParser:
         model['threshold'] = self.threshold
         model['true_graphs_dict'] = self.true_graphs_dict
         model['indexed_features'] = self.indexed_features
-        model['local_features_dict'] = self.local_features_dict
-        model['global_features_dict'] = self.global_features_dict
         model['num_of_features'] = self.num_of_features
         model['param_vec'] = self.param_vec
         model['train_set'] = self.train_set
@@ -169,8 +164,8 @@ class DependencyParser:
         model_path = os.path.join(self.model_dir, self.model_name+".pkl")
         if not os.path.isdir(self.model_dir):
             os.mkdir(self.model_dir)
-        # with open(model_path, "wb") as f:
-        #     pickle.dump(model, f)
+        with open(model_path, "wb") as f:
+            pickle.dump(model, f)
         print('Save model to ' + model_path)
         return model_path
 
