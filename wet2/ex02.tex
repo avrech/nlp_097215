@@ -1,0 +1,123 @@
+%% LyX 2.2.3 created this file.  For more info, see http://www.lyx.org/.
+%% Do not edit unless you really know what you are doing.
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm2e}
+\usepackage{mathtools}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{caption}
+
+\makeatletter
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LyX specific LaTeX commands.
+\special{papersize=\the\paperwidth,\the\paperheight}
+\addtolength{\oddsidemargin}{-70pt}
+\addtolength{\textwidth}{150pt}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+\usepackage{amsfonts}
+\usepackage{amsthm}
+\usepackage{relsize}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\newcommand{\defeq}{\mathrel{\overset{\makebox[0pt]{\mbox{\normalfont\tiny\sffamily def}}}{=}}}
+\renewcommand{\thesubsection}{\alph{subsection}.}
+
+
+\makeatother
+
+
+\begin{document}
+
+
+NLP - 097215 - Computer Exercise No. 2
+
+\subsection{Submitted by:}
+Avrech Ben-David - 200452282\\
+Ilan Frank - 043493386
+
+\subsection{Training}
+We implemented a dependency parser based on McDonald 2005.
+Besides the unigram and bigram features required in the exercise (for model 1), we added additional
+features to the complex model (model 2). These features include:
+
+\begin{itemize}[leftmargin=*]
+\item 14: $dist(h,m)$: The distance in words between parent and child nodes.
+\item 15: (p-pos, p-next-pos): where p-next-pos is the part of speech following the p node.
+\item 16: (p-pos, c-pos, $dist(h,m)$): combined feature for parent and child nodes with the distance between them.
+\item 17: $len(sentence)$: where we took the actual length of the sentence for sentences under 30 words, the floor length to the nearest tens digits for sentences between 30 and 100 (i.e., 48 goes to 40) and the hundreds digit for sentences above 100 (217 goes to 200).
+\end{itemize}
+
+We generated the features for all positive occurrences in our train set, and in addition,
+to give the model more degrees of freedom, we generated the features (p-pos, c-pos) (feature 13), and features 15, 16 for unobserved combinations - for all POS combinations and for distances in range [-20:20].
+
+We also used threshold to remove some of the sparse word features (features 4, 8, 10) in order to remove some sparse features which weren't contributing to classification, and speed up training time. Table 1 shows the number of features of each type in each of the models.
+
+\begin{table}[htb]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+Feature subset & Model 1 & Model 2\\ 
+\hline
+1 & 9993 & 9993 \\ 
+\hline
+2 & 8876 & 8876 \\ 
+\hline
+3 & 37 & 37 \\ 
+\hline
+4 & 7347 & 7347 \\ 
+\hline
+5 & 14162 & 14162 \\ 
+\hline
+6 & 45 & 45 \\ 
+\hline
+7 & 0 & 0 \\ 
+\hline
+8 & 10615 & 10615 \\ 
+\hline
+9 & 0 & 0 \\ 
+\hline
+10 & 12598 & 12598 \\ 
+\hline
+11 & 0 & 0 \\ 
+\hline
+12 & 0 & 0 \\ 
+\hline
+13 & 1441 & 1441 \\ 
+\hline
+14 & 0 & 126 \\ 
+\hline
+15 & 0 & 1433 \\ 
+\hline
+16 & 0 & 58469 \\ 
+\hline
+17 & 0 & 38 \\
+\hline
+Total & 65114 & 125180\\ 
+\hline
+\end{tabular}
+\caption{The size of the features subsets (after filtering)}
+\end{table}
+
+We ran each model for 20 epochs, which seemed to bring the accuracy to a plateau.
+Training for the simple model, M1, took -----, and was ran on an Asus X556U with intel i5 and 8GB RAM. For the complex model, M2, training took ----, and was ran on a Lenovo ThinkPad T460 with intel i5 and 16GB RAM.
+
+\subsection{Inference}
+Inference was made using the supplied Chu-Liu-Edmonds algorithm, with a score function based on the local and global features of the sentence.
+
+\subsection{Test}
+
+\subsection{Competition}
+We used the complex model to annotate the competition file.
+We predict an accuracy of around 0.75.
+ 
+\subsection{Work Partition}
+One team member was responsible for the training and feature generation, and the other was responsible for the inference, managing model versions and results analysis. 
+
+\end{document}
