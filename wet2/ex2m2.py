@@ -22,19 +22,19 @@ params = {
     'comp_file': 'comp.unlabeled'
 }
 
-if False:
+if True:
     # Choose this to train a new model from scratch:
     model_file = None
 else:
     # Choose path if to continue training some pre-trained model, for example:
     model_file = 'saved_models/2019-01-20/m2-f18-s-5000-ep-3-test_acc-0.78-acc-0.83-from-03-01-12.pkl'
 
-epochs = 3                 # total num of epochs
-snapshots = 3              # How many times to save model during training. if = 0 - do not train at all.
-record_interval = 1         # evaluate model every num of epochs and store history for learning curve
+epochs = 100                 # total num of epochs
+snapshots = 10              # How many times to save model during training. if = 0 - do not train at all.
+record_interval = 5         # evaluate model every num of epochs and store history for learning curve
 eval_on = 100               # number of random samples to evaluate on.
 shuffle = True              # shuffle training examples every epoch
-model_description = 'm2-f18'    # give a short description for model_name prefix
+model_description = 'm2-full'    # give a short description for model_name prefix
 # At the finale of every training session,
 # the model evaluates the entire train-set and test-set
 # and reports results.
