@@ -476,12 +476,12 @@ class DependencyParser:
         acc = np.mean(total_shot)
         return np.mean(acc), time.time()-t_start, confusion_mat
 
-    def print_confusion_matrix(self, cm, print_to_csv=True, save_pkl=True, description='last_eval', print_to_console=False):
+    def print_confusion_matrix(self, cm, print_to_csv=True, save_pkl=True, csv_id='last_eval', print_to_console=False):
         """
         Print confusion matrix statistics
         :return: None
         """
-        print('Computing ' + description + ' confusion matrix...')
+        print('Computing ' + csv_id + ' confusion matrix...')
         # print failures vs. c_pos, p_pos
         headers = ['C\P'] + [c_pos for c_pos in cm.keys()] + ['Total']
         rows = []
@@ -501,7 +501,7 @@ class DependencyParser:
             print('----------------------------------------------------------')
             print(tabulate(rows, headers=headers, tablefmt='orgtbl', numalign='left'))
         if save_pkl:
-            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + description + '-cm.pkl')
+            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + csv_id + '-cm.pkl')
             if not os.path.isdir(self.model_dir):
                 os.mkdir(self.model_dir)
             with open(csv_filename, "wb") as f:
@@ -509,7 +509,7 @@ class DependencyParser:
             print('Save confusion matrix to ' + csv_filename)
 
         if print_to_csv:
-            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + description + '-confusion_mat.csv')
+            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + csv_id + '-confusion_mat.csv')
             with open(csv_filename, "w") as f:
                 writer = csv.writer(f)
                 writer.writerows([headers] + rows)
@@ -614,8 +614,9 @@ def read_file(filename, annotated=True):
 
 def annotate_file(filename, model):
     sentences = read_file(filename, annotated=False)
-    clean_name = filename.split('.')[0]
-    new_file = clean_name + '.labeled'
+    dest_path = os.path.split(filename)[0]
+    clean_name = os.path.split(filename)[-1].split('.')[0] + '.labeled'
+    new_file = os.path.join(dest_path, clean_name)
     with open(new_file, 'w') as f:
         for sentence in tqdm(sentences, 'annotating sentences'):
             pred_successors = model.infer(sentence)

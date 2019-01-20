@@ -51,9 +51,9 @@ for ii in range(snapshots):
              model_description=model_description)
     dp.print_results()
 _, _, test_cm = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
-dp.print_confusion_matrix(test_cm, print_to_csv=True, description='test')
+dp.print_confusion_matrix(test_cm, print_to_csv=True, csv_id='test')
 _, _, train_cm = dp.evaluate(dp.train_set, calc_confusion_matrix=True)
-dp.print_confusion_matrix(train_cm, print_to_csv=True, description='train')
+dp.print_confusion_matrix(train_cm, print_to_csv=True, csv_id='train')
 dp.plot_history()
 dp.model_info()
 
