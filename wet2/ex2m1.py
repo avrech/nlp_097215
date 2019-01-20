@@ -14,7 +14,7 @@ params = {
     'train_sentences_max': None,  # set to None to use full set
     'test_sentences_max': None,  # set to None to use full set
     'test_file': 'test.labeled',
-    'threshold': {4: 2, 8: 2, 10: 2},  # set thresholds for features appearance.
+    'threshold': {},  # set thresholds for features appearance. 4: 2, 8: 2, 10: 2
     # a feature that appears less than th times is filtered.
     'features_to_use': [1, 2, 3, 4, 5, 6, 8, 10, 13]
 }
@@ -31,7 +31,7 @@ snapshots = 10  # How many times to save model during training. if = 0 - do not 
 record_interval = 10  # evaluate model every num of epochs and store history for learning curve
 eval_on = 100  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
-model_description = 'm1'  # give a short description for model_name prefix
+model_description = 'm1-final'  # give a short description for model_name prefix
 # At the finale of every training session,
 # the model evaluates the entire train-set and test-set
 # and reports results.
@@ -48,10 +48,10 @@ for ii in range(snapshots):
              shuffle=shuffle,
              model_description=model_description)
     dp.print_results()
-# _, _, test_cm = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
-# dp.print_confusion_matrix(test_cm, print_to_csv=True, csv_id='test')
-# _, _, train_cm = dp.evaluate(dp.train_set, calc_confusion_matrix=True)
-# dp.print_confusion_matrix(train_cm, print_to_csv=True, csv_id='train')
+_, _, test_cm = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
+dp.print_confusion_matrix(test_cm, print_to_csv=True, csv_id='test')
+_, _, train_cm = dp.evaluate(dp.train_set, calc_confusion_matrix=True)
+dp.print_confusion_matrix(train_cm, print_to_csv=True, csv_id='train')
 
 dp.plot_history()
 dp.model_info()
