@@ -143,8 +143,9 @@ class DependencyParser:
         # Save model to pkl:
         if model_description != '':
             model_description += '-'
-        self.model_name = model_description + "m{}-test_acc-{}-acc-{}-from-{}".format(
+        self.model_name = model_description + "s-{}-ep-{}-test_acc-{}-acc-{}-from-{}".format(
             len(self.train_set),
+            final_epoch,
             self.results['Test-set accuracy'],
             self.results['Train-set accuracy'],
             str(datetime.datetime.now())[11:-7].replace(' ', '-').replace(':', '-'))
@@ -225,7 +226,7 @@ class DependencyParser:
         :param threshold:
         :return:
         """
-        features_dict = {i: {} for i in range(1, 18)}
+        features_dict = {i: {} for i in range(1, 19)}
         distances = set()
         for sentence in tqdm(sentences, 'Extracting features...'):
             sentence_len = self.get_discretize_sentence_len(sentence)
@@ -242,6 +243,7 @@ class DependencyParser:
                         p_next_pos = sentence[p_node][3]
                     else:
                         p_next_pos = None
+                    c_next_pos = sentence[c_node][3] if c_node < len(sentence) else None
                     c_word = sentence[c_node-1][2]
                     c_pos = sentence[c_node-1][3]
                     distance = p_node - c_node
@@ -258,7 +260,9 @@ class DependencyParser:
                     self.safe_add(features_dict[14], distance)                  # 14 distance
                     self.safe_add(features_dict[15], (p_pos, p_next_pos))       # 15 p_pos and next pos
                     self.safe_add(features_dict[16], (p_pos, c_pos, distance))  # 16 distance
-                    self.safe_add(features_dict[17], sentence_len)              # 17 distance
+                    self.safe_add(features_dict[17], sentence_len)              # 17 sentence length
+                    if distance > 1:
+                        self.safe_add(features_dict[18], (c_pos, c_next_pos, p_pos))# 18 helps discarding false far parents
                     distances.add(distance)
         # add features for all pos combinations (negative features)
         distances = [i - 20 for i in range(42)]
@@ -353,6 +357,7 @@ class DependencyParser:
                     p_next_pos = sentence[p_node][3]
                 else:
                     p_next_pos = None
+                c_next_pos = sentence[c_node][3] if c_node < len(sentence) else None
                 c_word = sentence[c_node-1][2]
                 c_pos = sentence[c_node-1][3]
                 distance = p_node - c_node
@@ -369,6 +374,7 @@ class DependencyParser:
                 local_features[(p_node, c_node)] += [self.indexed_features[15].get((p_pos, p_next_pos), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[16].get((p_pos, c_pos, distance), None)]
                 local_features[(p_node, c_node)] += [self.indexed_features[17].get(sentence_len, None)]
+                local_features[(p_node, c_node)] += [self.indexed_features[18].get((c_pos, c_next_pos, p_pos), None)]
 
                 local_features[(p_node, c_node)] = [x for x in local_features[(p_node, c_node)] if x is not None]
         return local_features
@@ -425,7 +431,8 @@ class DependencyParser:
         if calc_confusion_matrix:
             pos_set = set([w[3] for s in sentences for w in s])
             confusion_mat = {c_pos: {p_pos: {'distance': dict(),
-                                             'pred_pos': dict()}
+                                             'pred_pos': dict(),
+                                             'true_distance': dict()}
                                      for p_pos in pos_set}
                              for c_pos in pos_set}
 
@@ -453,24 +460,35 @@ class DependencyParser:
                         c = sentence[w_id-1]
                         true_p = sentence[true_deps[w_id]-1]
                         pred_p = sentence[pred_deps[w_id]-1]
-                        self.safe_add(confusion_mat[c[3]][true_p[3]]['distance'], w_id-true_deps[w_id])
+                        # record the true distance between child and parent:
+                        # self.safe_add(confusion_mat[c[3]][true_p[3]]['distance'], w_id - true_deps[w_id])
+
+                        if w_id - true_deps[w_id] not in confusion_mat[c[3]][true_p[3]]['distance']:
+                            confusion_mat[c[3]][true_p[3]]['distance'][w_id - true_deps[w_id]] = {'pred_pos': {}, 'pred_distance': {}}
+                        # for the true distance, record the false predicted POS and distance:
+                        self.safe_add(confusion_mat[c[3]][true_p[3]]['distance'][w_id - true_deps[w_id]]['pred_pos'], pred_p[3])
+                        self.safe_add(confusion_mat[c[3]][true_p[3]]['distance'][w_id - true_deps[w_id]]['pred_distance'], w_id - pred_deps[w_id])
+
+                        # record the false prediction POS:
                         self.safe_add(confusion_mat[c[3]][true_p[3]]['pred_pos'], pred_p[3])
+                        # for each false predicted POS:
 
         acc = np.mean(total_shot)
         return np.mean(acc), time.time()-t_start, confusion_mat
 
-    def print_confusion_matrix(self, cm, print_to_csv=True, csv_id='last_eval', print_to_console=False):
+    def print_confusion_matrix(self, cm, print_to_csv=True, save_pkl=True, description='last_eval', print_to_console=False):
         """
         Print confusion matrix statistics
         :return: None
         """
+        print('Computing ' + description + ' confusion matrix...')
         # print failures vs. c_pos, p_pos
         headers = ['C\P'] + [c_pos for c_pos in cm.keys()] + ['Total']
         rows = []
         for child_pos, parents in cm.items():
             row = []
             for parent in parents.values():
-                row.append(sum(parent['distance'].values()))  # total_failures
+                row.append(sum(parent['pred_pos'].values()))  # total_failures
             row.append(sum(row))
             rows.append([child_pos] + row)
         # calculate total failures per parent
@@ -482,9 +500,16 @@ class DependencyParser:
             print('----------- Dependency-Parser Confusion Matrix -----------')
             print('----------------------------------------------------------')
             print(tabulate(rows, headers=headers, tablefmt='orgtbl', numalign='left'))
+        if save_pkl:
+            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + description + '-cm.pkl')
+            if not os.path.isdir(self.model_dir):
+                os.mkdir(self.model_dir)
+            with open(csv_filename, "wb") as f:
+                pickle.dump(cm, f)
+            print('Save confusion matrix to ' + csv_filename)
 
         if print_to_csv:
-            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + csv_id + '-confusion_mat.csv')
+            csv_filename = os.path.join(self.model_dir, self.model_name + '-' + description + '-confusion_mat.csv')
             with open(csv_filename, "w") as f:
                 writer = csv.writer(f)
                 writer.writerows([headers] + rows)
@@ -520,24 +545,32 @@ class DependencyParser:
         for sentence in tqdm(self.train_set + self.test_set, 'Calculate true graphs for features analysis'):
             true_graph = self.calc_graph(sentence)
             self.true_graphs_dict[sentence] = true_graph
-        trn_features = self.extract_features(self.train_set, threshold=self.threshold)
+        th_trn_features = self.extract_features(self.train_set, threshold=self.threshold)
+        full_trn_features = self.extract_features(self.train_set)
         tst_features = self.extract_features(self.test_set)
-        trn_f_set = {k: set(f.keys()) for k, f in trn_features.items()}
+        th_trn_f_set = {k: set(f.keys()) for k, f in th_trn_features.items()}
+        full_trn_f_set = {k: set(f.keys()) for k, f in full_trn_features.items()}
+        diff_trn_f_set = {k: full_trn_f_set[k] - th_trn_f_set[k] for k in full_trn_f_set.keys()}
         tst_f_set = {k: set(f.keys()) for k, f in tst_features.items()}
         # The common features in train and test:
-        f_set_intersection = {k: trn_f_set[k] & tst_f_set[k] for k in trn_f_set.keys()}
+        th_f_set_intersection = {k: th_trn_f_set[k] & tst_f_set[k] for k in th_trn_f_set.keys()}
+        diff_f_set_intersection = {k: diff_trn_f_set[k] & tst_f_set[k] for k in diff_trn_f_set.keys()}
+
         # The efficiency per feature type:
-        f_overlap = {k: len(f_set_intersection[k])/len(trn_f_set[k]) for k in trn_f_set.keys() if len(trn_f_set[k]) > 0}
-        headers = ['Feature ID', 'Count', 'Overlap']
-        statistics = np.array([[k, len(trn_f_set[k]), f_overlap.get(k, 0)] for k in trn_f_set.keys()])
-        total_f = sum(statistics[:, 1])
-        total_overlap = sum(statistics[:, 1] * statistics[:, 2])/total_f
+        th_f_overlap = {k: len(th_f_set_intersection[k])/len(th_trn_f_set[k]) for k in th_trn_f_set.keys() if len(th_trn_f_set[k]) > 0}
+        # The damage because of thresholding: percents of test features which discarded.
+        th_damage = {k: len(diff_f_set_intersection[k]) / len(tst_f_set[k]) for k in diff_trn_f_set.keys() if len(tst_f_set[k]) > 0}
+        headers = ['Feature ID', 'Count (th on)', 'Overlap', 'Threshold Damage']
+        statistics = np.array([[k, len(th_trn_f_set[k]), th_f_overlap.get(k, 0), th_damage.get(k, 0)] for k in th_trn_f_set.keys()])
+        th_total_f = sum(statistics[:, 1])
+        th_total_overlap = sum(statistics[:, 1] * statistics[:, 2])/th_total_f
         print('-----------------------------------------------------------')
         print('----------- Dependency-Parser Features Analysis -----------')
         print('-----------------------------------------------------------')
         print(tabulate(statistics, headers=headers, tablefmt='orgtbl', numalign='left'))
-        print('Total Features in Train-Set: ', int(total_f))
-        print('Total Overlap: {:.2f}'.format(total_overlap))
+        print('Total Features in Train-Set (th on): ', int(th_total_f))
+        print('Total Overlap: {:.2f}'.format(th_total_overlap))
+
 
         """
         Feature 8 is very sparse, and has 0.15 overlap
@@ -545,8 +578,8 @@ class DependencyParser:
 
         from operator import itemgetter
         trn_f_sorted = dict()
-        for f in trn_features.keys():
-            trn_f_sorted[f] = {k: v for k, v in sorted(trn_features[f].items(), key=itemgetter(1), reverse=True)}
+        for f in th_trn_features.keys():
+            trn_f_sorted[f] = {k: v for k, v in sorted(th_trn_features[f].items(), key=itemgetter(1), reverse=True)}
 
         # restore true graphs
         self.true_graphs_dict = dict()
@@ -594,6 +627,3 @@ def annotate_file(filename, model):
                 f.write(word_line + '\n')
             f.write('\n')
 
-
-if __name__ == '__main__':
-    pass
