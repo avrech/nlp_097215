@@ -58,6 +58,6 @@ dp.plot_history()
 dp.model_info()
 
 # annotate competition file:
-annotate_file(params['comp_file'], dp)
+annotate_file(params['comp_file'], dp, result_fname='comp_m2_200452282.wtag')
 
 print('finished {}'.format(datetime.datetime.now()))

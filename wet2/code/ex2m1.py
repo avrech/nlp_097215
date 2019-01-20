@@ -27,10 +27,10 @@ else:
     # Choose path if to continue training some pre-trained model, for example:
     model_file = 'saved_models/2019-01-19/m1-m5000-test_acc-0.73-acc-0.75-from-10-52-31.pkl'
 
-epochs = 4  # total num of epochs
-snapshots = 2  # How many times to save model during training. if = 0 - do not train at all.
+epochs = 10  # total num of epochs
+snapshots = 1  # How many times to save model during training. if = 0 - do not train at all.
 record_interval = 1  # evaluate model every num of epochs and store history for learning curve
-eval_on = 10  # number of random samples to evaluate on.
+eval_on = 100  # number of random samples to evaluate on.
 shuffle = True  # shuffle training examples every epoch
 model_description = 'm1-final'  # give a short description for model_name prefix
 # At the finale of every training session,
@@ -55,4 +55,8 @@ _, _, train_cm = dp.evaluate(dp.train_set, calc_confusion_matrix=True)
 dp.print_confusion_matrix(train_cm, print_to_csv=True, csv_id='train')
 dp.plot_history()
 dp.model_info()
-print('finished'.format(datetime.datetime.now()))
+
+# annotate competition file:
+annotate_file(params['comp_file'], dp, result_fname='comp_m1_200452282.wtag')
+
+print('finished {}'.format(datetime.datetime.now()))

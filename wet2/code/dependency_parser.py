@@ -611,11 +611,13 @@ def read_file(filename, annotated=True):
     return sentences
 
 
-def annotate_file(filename, model):
+def annotate_file(filename, model, result_fname=None):
+    if result_fname is None:
+        print('Error in annotate_file')
+        exit(-1)
     sentences = read_file(filename, annotated=False)
     dest_path = os.path.split(filename)[0]
-    clean_name = os.path.split(filename)[-1].split('.')[0] + '.labeled'
-    new_file = os.path.join(dest_path, clean_name)
+    new_file = os.path.join(dest_path, result_fname)
     with open(new_file, 'w') as f:
         for sentence in tqdm(sentences, 'annotating sentences'):
             pred_successors = model.infer(sentence)
