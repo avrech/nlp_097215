@@ -2,10 +2,10 @@ import datetime
 import os
 import numpy as np
 import sys
-from dependency_parser import DependencyParser
 cur_file_path = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(cur_file_path)
 os.chdir(cur_file_path)
+from dependency_parser import DependencyParser
 
 if not os.path.isdir('saved_models'):
     os.mkdir('saved_models')

@@ -27,7 +27,7 @@ if True:
     model_file = None
 else:
     # Choose path if to continue training some pre-trained model, for example:
-    model_file = 'saved_models/2019-01-20/m2-f18-s-5000-ep-3-test_acc-0.78-acc-0.83-from-03-01-12.pkl'
+    model_file = 'saved_models/2019-01-20/m2-f18-s-5000-ep-13-test_acc-0.80-acc-0.89-from-03-55-44.pkl'
 
 epochs = 100                 # total num of epochs
 snapshots = 10              # How many times to save model during training. if = 0 - do not train at all.
@@ -43,11 +43,11 @@ model_description = 'm2-full'    # give a short description for model_name prefi
 # the save path is printed in console when save() occurs.
 dp = DependencyParser(params, pre_trained_model_file=model_file)
 dp.analyze_features()
-# with open('saved_models/2019-01-20/m2-no-th-s-5000-ep-8-test_acc-0.76-acc-0.83-from-00-49-35-test-cm.pkl', 'rb') as f:
-#     test_cm = pickle.load(f)
-# _, _, test_cm = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
-#
-# dp.print_confusion_matrix(last_cm,print_to_csv=False, save_pkl=False)
+with open('saved_models/2019-01-20/m2-f18-s-5000-ep-33-test_acc-0.80-acc-0.92-from-08-52-10-test-cm.pkl', 'rb') as f:
+    test_cm = pickle.load(f)
+_, _, test_cm = dp.evaluate(dp.test_set, calc_confusion_matrix=True)
+
+dp.print_confusion_matrix(last_cm,print_to_csv=False, save_pkl=False)
 
 for ii in range(snapshots):
     dp.train(epochs=int(np.ceil(epochs / snapshots)),
