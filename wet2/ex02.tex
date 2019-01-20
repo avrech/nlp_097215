@@ -35,9 +35,8 @@
 
 \begin{document}
 
-
-NLP - 097215 - Computer Exercise No. 2
-
+\title{NLP - 097215 - Computer Exercise No. 2}
+\maketitle
 \subsection{Submitted by:}
 Avrech Ben-David - 200452282\\
 Ilan Frank - 043493386
@@ -52,12 +51,16 @@ features to the complex model (model 2). These features include:
 \item 15: (p-pos, p-next-pos): where p-next-pos is the part of speech following the p node.
 \item 16: (p-pos, c-pos, $dist(h,m)$): combined feature for parent and child nodes with the distance between them.
 \item 17: $len(sentence)$: where we took the actual length of the sentence for sentences under 30 words, the floor length to the nearest tens digits for sentences between 30 and 100 (i.e., 48 goes to 40) and the hundreds digit for sentences above 100 (217 goes to 200).
+\item 18: (c-pos, c-next-pos, p-pos) if the distance between the parent and child is greater than 1.
 \end{itemize}
+The basic feature set of model 1 achieved poor performance. The test accuracy upper bound was around 0.6. We analyzed the confusion matrix of model 1, and noticed that there are common mistakes which the parent POS was predicted correctly, but the distance between the child and parent was wrong. This was the motivation to introduce distance based features 14-17. The addition of features 14-17 achieved test accuracy of 0.78. We further analyzed the confusion matrix, and revealed that a considerable mass of the errors occur when the model predict a parent which is far from the child, while the true parent actually followed the child. We introduce the "punishment" feature (18), that punish false predictions such that. This last feature improved the test accuracy to stand on 0.8 after a small number of epochs.
+
+We examined thresholding the sparsed features (4,8,10) in order to accelerate training. In fact, thresholding did not improved the training time significantly, and the performance seemed to be slightly worse, so we discarded this option. 
 
 We generated the features for all positive occurrences in our train set, and in addition,
 to give the model more degrees of freedom, we generated the features (p-pos, c-pos) (feature 13), and features 15, 16 for unobserved combinations - for all POS combinations and for distances in range [-20:20].
 
-We also used threshold to remove some of the sparse word features (features 4, 8, 10) in order to remove some sparse features which weren't contributing to classification, and speed up training time. Table 1 shows the number of features of each type in each of the models.
+Table 1 shows the number of features of each type in each of the models.
 
 \begin{table}[htb]
 \centering
