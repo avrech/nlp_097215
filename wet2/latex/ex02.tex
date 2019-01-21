@@ -124,12 +124,14 @@ Actually, we achieved the best accuracy on the test set after 14 epochs. After t
 
 
 \subsection{Competition}
-We used the complex model to annotate the competition file. Model 2 was freezed after epoch 14, the first epoch with the maximal test accuracy. We chose this snapshot in order to avoid the overfitting to the train set. We predict an accuracy of around 0.75. Actually we used the test set as a validation set. the extended features were selected in order to avoid the model mistakes as they were reflected in the test confusion matrix. If the competition set distribution is significantly different, it could results in inferior performance. Anyway, we saw that the sentences length is mainly shorter in the competition file, so we are still optimistic.
+For annotating the competition file we used Model 1 trained for 10 epochs, and the best snapshot of Model 2. Model 2 was freezed after 14 epochs, when it reached the best test accuracy for the first time. We chose this snapshot in order to avoid overfitting to the train set. 
+
+We predict accuracy of 0.75 approximately. Actually we used the test set as a validation set. the extended features were selected in order to avoid the model mistakes as they were reflected in the test confusion matrix. If the competition set distribution is significantly different, it could results in inferior performance. Anyway, we saw that the sentences length is mainly shorter in the competition file, so we are still optimistic.
  
 \subsection{Work Partition}
 One team member was responsible for the training and inference skeleton. The other was responsible for  managing model versions and results analysis. Both members contributed to the feature generation. 
 
 \subsection{Results Reproduction}
-To reproduce our results, follow the instructions in the supplied README file. The README file contains commands for installation of compatible python3 virtualenv, and instructions for running our code.
+To reproduce our results, follow the instructions in the supplied README file. The README file contains commands for installation of compatible python3 virtualenv, and instructions for running our code. The code was tested on ubuntu 18.04. 
 
 \end{document}

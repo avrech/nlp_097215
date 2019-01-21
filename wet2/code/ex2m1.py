@@ -17,7 +17,8 @@ params = {
     'test_file': os.path.join('..','test.labeled'),
     'threshold': {},  # set thresholds for features appearance. 4: 2, 8: 2, 10: 2
     # a feature that appears less than th times is filtered.
-    'features_to_use': [1, 2, 3, 4, 5, 6, 8, 10, 13]
+    'features_to_use': [1, 2, 3, 4, 5, 6, 8, 10, 13],
+    'comp_file': 'comp.unlabeled'
 }
 
 if True:
