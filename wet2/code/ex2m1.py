@@ -42,6 +42,7 @@ model_description = 'm1-final'  # give a short description for model_name prefix
 # the save path is printed in console when save() occurs.
 
 dp = DependencyParser(params, pre_trained_model_file=model_file)
+dp.model_info()
 dp.analyze_features()
 for ii in range(snapshots):
     dp.train(epochs=int(np.ceil(epochs / snapshots)),
@@ -55,7 +56,6 @@ dp.print_confusion_matrix(test_cm, print_to_csv=True, csv_id='test')
 _, _, train_cm = dp.evaluate(dp.train_set, calc_confusion_matrix=True)
 dp.print_confusion_matrix(train_cm, print_to_csv=True, csv_id='train')
 dp.plot_history()
-dp.model_info()
 
 # annotate competition file:
 annotate_file(params['comp_file'], dp, result_fname='comp_m1_200452282.wtag', result_dir='results')
