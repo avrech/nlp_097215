@@ -12,14 +12,14 @@ from dependency_parser import DependencyParser, annotate_file
 if not os.path.isdir('saved_models'):
     os.mkdir('saved_models')
 params = {
-    'train_file': os.path.join('..', 'train.labeled'),
+    'train_file': 'train.labeled',
     'train_sentences_max': None,        # set to None to use full set
     'test_sentences_max': None,         # set to None to use full set
-    'test_file': os.path.join('..', 'test.labeled'),
+    'test_file': 'test.labeled',
     'threshold': {},   # set thresholds for features appearance. 4: 2, 8: 2, 10: 2
                                         # a feature that appears less than th times is filtered.
     'features_to_use': [1, 2, 3, 4, 5, 6, 8, 10, 13, 14, 15, 16, 17, 18],
-    'comp_file': os.path.join('..','comp.unlabeled')
+    'comp_file': 'comp.unlabeled'
 }
 
 if False:
@@ -58,6 +58,6 @@ dp.plot_history()
 dp.model_info()
 
 # annotate competition file:
-annotate_file(params['comp_file'], dp, result_fname='comp_m2_200452282.wtag')
+annotate_file(params['comp_file'], dp, result_fname='comp_m2_200452282.wtag', result_dir='results')
 
 print('finished {}'.format(datetime.datetime.now()))

@@ -9,6 +9,7 @@ This folder contains:
 	report.pdf - report of the models development process.  
 
 Installation:  
+
 Open a terminal and run the following commands:  
 	virtualenv --python=/usr/bin/python3 venv  
 	source venv/bin/activate  
@@ -16,11 +17,13 @@ Open a terminal and run the following commands:
 	
 Now, when the virtual environment is installed, you can run the following commands:  
 	cd code/  
-	python ex2m2.py                    - this trains Model 2 from scratch and annotate the competition file by the last updated model.  
-	python ex2m2_pretrained.py    - this run a pre-trained model to reproduce the reported results.  
-	python ex2m1.py                    - this trains Model 1 from scratch and annotate the competition file by the last updated model.  
+To train Model 2 from scratch and annotate the competition file by the last updated model:  
+	python ex2m2.py  
+To reproduce the reported results using a pre-trained Model 2:
+	python ex2m2_pretrained.py    
+To train Model 1 from scratch and annotate the competition file by the last updated model:
+	python ex2m1.py  
 	
 After running the code you can view the learning curve and confusion matrix in code/saved_models/<date>/  
 The labeled competition files will be written to code/results/  
 Running the code will not change the submmitted competition files in the main directory.  
-
